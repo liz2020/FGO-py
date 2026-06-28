@@ -384,12 +384,11 @@ function renderActive() {
                 <span class="status-badge">Running</span>
             </div>`;
         } else {
-            // cancelled or error — show with dismiss button
+            // cancelled or error — show status, Start will clear it
             const label = st === 'error' ? 'Error' : 'Cancelled';
             el.innerHTML = `<div class="active-task" style="border-color: var(--primary);">
                 <span class="info">${desc}</span>
                 <span class="status-badge" style="background: rgba(233,69,96,0.2); color: var(--primary);">${label}</span>
-                <button class="remove-btn" onclick="removeFromQueue('${state.active.id}')">✕</button>
             </div>`;
         }
     } else {
