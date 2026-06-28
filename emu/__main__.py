@@ -1,8 +1,8 @@
 """Entry point for the Emulator Manager service.
 
 Usage:
-    uv run python -m emu.service
-    uv run python -m emu.service --port 15100 --host 0.0.0.0
+    uv run python -m emu
+    uv run python -m emu --port 15100 --host 0.0.0.0
 """
 
 from __future__ import annotations
