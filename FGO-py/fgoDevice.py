@@ -30,7 +30,14 @@ def bs5(*args):
 
 
 class LDPlayerDevice:
-    """LDPlayer device using emu module for fast screenshots + ldconsole for input."""
+    """LDPlayer device using emu module for fast screenshots + Win32 PostMessage for input."""
+
+    # Win32 constants
+    WM_MOUSEMOVE = 0x0200
+    WM_LBUTTONDOWN = 0x0201
+    WM_LBUTTONUP = 0x0202
+    MK_LBUTTON = 0x0001
+
     def __init__(self, index: int):
         import sys, os
         sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -62,9 +69,48 @@ class LDPlayerDevice:
         self.name = f"ldplayer:{index}"
         # Detect running FGO package
         self.package = self._detect_fgo_package()
-        # Scale factor: game coordinates are in 1280x720 space
-        self._scale_x = self._width / 1280.0
-        self._scale_y = self._height / 720.0
+        # Find the RenderWindow HWND for Win32 input
+        self._render_hwnd = self._find_render_hwnd()
+        if not self._render_hwnd:
+            raise RuntimeError(f"Could not find RenderWindow for LDPlayer instance {index}")
+        # Get render window client size for coordinate scaling
+        import ctypes, ctypes.wintypes
+        rect = ctypes.wintypes.RECT()
+        ctypes.windll.user32.GetClientRect(self._render_hwnd, ctypes.byref(rect))
+        self._render_w = rect.right
+        self._render_h = rect.bottom
+        # Scale: game coords (1280x720) → render window client area
+        self._scale_x = self._render_w / 1280.0
+        self._scale_y = self._render_h / 720.0
+
+    def _find_render_hwnd(self):
+        """Find the RenderWindow child HWND belonging to this LDPlayer instance."""
+        import ctypes, ctypes.wintypes
+        user32 = ctypes.windll.user32
+        WNDENUMPROC = ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.wintypes.HWND, ctypes.wintypes.LPARAM)
+        result = [None]
+
+        def enum_top(hwnd, _):
+            cls_buf = ctypes.create_unicode_buffer(256)
+            user32.GetClassNameW(hwnd, cls_buf, 256)
+            if cls_buf.value != "LDPlayerMainFrame":
+                return True
+            pid = ctypes.wintypes.DWORD()
+            user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+            if pid.value != self._pid:
+                return True
+            # Found the main frame for our PID — find RenderWindow child
+            def enum_child(child_hwnd, _):
+                child_cls = ctypes.create_unicode_buffer(256)
+                user32.GetClassNameW(child_hwnd, child_cls, 256)
+                if child_cls.value == "RenderWindow":
+                    result[0] = child_hwnd
+                    return False
+                return True
+            user32.EnumChildWindows(hwnd, WNDENUMPROC(enum_child), 0)
+            return result[0] is None  # stop if found
+        user32.EnumWindows(WNDENUMPROC(enum_top), 0)
+        return result[0]
 
     @property
     def available(self):
@@ -81,17 +127,18 @@ class LDPlayerDevice:
             img = cv2.resize(img, (1280, 720), interpolation=cv2.INTER_CUBIC)
         return img
 
-    def touch(self, pos):
-        """Touch at game coordinates (1280x720 space) via ldconsole."""
-        import subprocess
+    def touch(self, pos, wait=0):
+        """Touch at game coordinates (1280x720 space) via Win32 PostMessage."""
+        import ctypes, time
+        user32 = ctypes.windll.user32
         x = int(pos[0] * self._scale_x)
         y = int(pos[1] * self._scale_y)
-        subprocess.run(
-            [str(self._console.ldconsole), "adb", "--index", str(self._index),
-             "--command", f"shell input tap {x} {y}"],
-            capture_output=True, timeout=5,
-            creationflags=subprocess.CREATE_NO_WINDOW,
-        )
+        lparam = x | (y << 16)
+        user32.PostMessageW(self._render_hwnd, self.WM_MOUSEMOVE, 0, lparam)
+        time.sleep(0.01)
+        user32.PostMessageW(self._render_hwnd, self.WM_LBUTTONDOWN, self.MK_LBUTTON, lparam)
+        time.sleep(0.05)
+        user32.PostMessageW(self._render_hwnd, self.WM_LBUTTONUP, 0, lparam)
 
     def press(self, key):
         """Press a mapped key (touch at key position)."""
@@ -99,17 +146,30 @@ class LDPlayerDevice:
         if key in KEYMAP:
             self.touch(KEYMAP[key])
 
-    def swipe(self, begin, end):
-        """Swipe from begin to end in game coordinates."""
-        import subprocess
+    def swipe(self, begin, end, duration=300):
+        """Swipe from begin to end in game coordinates via Win32 PostMessage."""
+        import ctypes, time
+        user32 = ctypes.windll.user32
         x1, y1 = int(begin[0] * self._scale_x), int(begin[1] * self._scale_y)
         x2, y2 = int(end[0] * self._scale_x), int(end[1] * self._scale_y)
-        subprocess.run(
-            [str(self._console.ldconsole), "adb", "--index", str(self._index),
-             "--command", f"shell input swipe {x1} {y1} {x2} {y2} 300"],
-            capture_output=True, timeout=10,
-            creationflags=subprocess.CREATE_NO_WINDOW,
-        )
+        steps = max(5, duration // 20)
+        # Mouse down at start
+        lp_start = x1 | (y1 << 16)
+        user32.PostMessageW(self._render_hwnd, self.WM_MOUSEMOVE, 0, lp_start)
+        time.sleep(0.01)
+        user32.PostMessageW(self._render_hwnd, self.WM_LBUTTONDOWN, self.MK_LBUTTON, lp_start)
+        # Interpolate move
+        step_delay = duration / 1000.0 / steps
+        for i in range(1, steps + 1):
+            t = i / steps
+            cx = int(x1 + (x2 - x1) * t)
+            cy = int(y1 + (y2 - y1) * t)
+            lp = cx | (cy << 16)
+            user32.PostMessageW(self._render_hwnd, self.WM_MOUSEMOVE, self.MK_LBUTTON, lp)
+            time.sleep(step_delay)
+        # Mouse up at end
+        lp_end = x2 | (y2 << 16)
+        user32.PostMessageW(self._render_hwnd, self.WM_LBUTTONUP, 0, lp_end)
 
     def pinch(self):
         pass  # Not needed for FGO
