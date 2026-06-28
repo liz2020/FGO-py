@@ -100,3 +100,47 @@ vtable[2] = release() → void
 Removing the PySide6 GUI (6 files) and switching the default entry point from `gui` to `web` had no ripple effects. The web UI (Flask + vanilla JS) is a complete replacement for the desktop GUI, and the mobile-responsive dark theme works well on both phone and desktop.
 
 **Takeaway:** Decoupled UI layers make migration painless. The web-first approach is better for the remote-access use case (Tailscale from phone).
+
+---
+
+## 9. Keep the service network-agnostic
+
+**PRD assumption:** Show Tailscale hostname/IP in the dashboard for easy access.
+
+**Decision:** Removed. The emu manager shouldn't care whether the user connects via Tailscale, local browser, or any other network. Embedding Tailscale awareness creates an unnecessary coupling — it's the user's responsibility to know how to reach their own PC.
+
+**Takeaway:** Infrastructure services should be network-layer agnostic. Let the network stack (DNS, Tailscale MagicDNS, mDNS) handle discoverability — don't bake assumptions about the transport into the application layer.
+
+---
+
+## 10. Relative URLs are essential for reverse-proxy compatibility
+
+**Problem:** FGO-py's web UI used absolute paths (`/api/teamup/load`). When served behind the emu manager's reverse proxy at `/scripts/fgo/0/`, these absolute paths bypass the proxy and hit the wrong server.
+
+**Solution:**
+- All fetch calls use relative URLs without leading `/` (e.g., `api/teamup/load`)
+- From `/scripts/fgo/0/index` (proxy), resolves to `/scripts/fgo/0/api/teamup/load` → forwarded correctly
+- From `/index` (direct), resolves to `/api/teamup/load` → hits FGO-py directly
+- Flask redirect uses `redirect('index')` not `redirect('/index')` to preserve base path
+
+**Takeaway:** Always use relative URLs in apps that may be reverse-proxied. This eliminates the need for URL rewriting in the proxy layer.
+
+---
+
+## 11. Subprocess PIPE buffers cause silent hangs
+
+**Problem:** Spawning FGO-py with `stdout=PIPE, stderr=PIPE` caused the process to hang silently when nobody consumed the output and the OS pipe buffer (~64KB) filled up.
+
+**Solution:** Use `subprocess.DEVNULL` for fire-and-forget child processes. Only use `PIPE` if you actively call `communicate()` or read from the pipe in a thread.
+
+**Takeaway:** For long-lived child processes, always use `DEVNULL` or redirect to log files. `PIPE` is only safe with active consumers.
+
+---
+
+## 12. Progress reporting via HTTP callback is simple and decoupled
+
+**Design:** FGO-py POSTs `{current, total, status, detail}` to `http://127.0.0.1:15100/api/scripts/fgo/progress` every few seconds during farming.
+
+**Why not WebSocket?** Flask doesn't natively support WebSocket. Adding flask-socketio or switching to async would be over-engineering for a simple progress counter. HTTP POST is fire-and-forget, works with `urllib.request` (no deps), and the emu manager just stores the latest value in memory.
+
+**Takeaway:** Don't reach for WebSocket when a simple POST-to-poll pattern suffices. The dashboard polls progress on its own refresh cycle anyway.
