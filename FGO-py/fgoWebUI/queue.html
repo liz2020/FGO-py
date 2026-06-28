@@ -468,7 +468,7 @@ async function fetchCatalog() {
 }
 
 async function controlToggle() {
-    if (state.active) {
+    if (state.active && state.active.status === 'active') {
         await fetch(`${API}/api/control/cancel`, { method: 'POST' });
     } else {
         await fetch(`${API}/api/control/start`, { method: 'POST' });
