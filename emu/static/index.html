@@ -1,0 +1,386 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Emulator Manager</title>
+    <style>
+        :root {
+            --bg: #1a1a2e;
+            --surface: #16213e;
+            --card: #0f3460;
+            --primary: #e94560;
+            --success: #4ecca3;
+            --warning: #f0a500;
+            --text: #eaeaea;
+            --text-dim: #a0a0b0;
+            --radius: 12px;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            min-height: 100vh;
+            padding: 16px;
+            padding-bottom: 80px;
+        }
+        header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 12px 0;
+            margin-bottom: 16px;
+        }
+        header h1 { font-size: 1.3rem; }
+        .status-dot {
+            display: inline-block;
+            width: 10px; height: 10px;
+            border-radius: 50%;
+            margin-right: 6px;
+        }
+        .status-dot.online { background: var(--success); }
+        .status-dot.offline { background: var(--primary); }
+        .emu-info {
+            font-size: 0.85rem;
+            color: var(--text-dim);
+            margin-bottom: 16px;
+            padding: 8px 12px;
+            background: var(--surface);
+            border-radius: 8px;
+        }
+        .instance-card {
+            background: var(--card);
+            border-radius: var(--radius);
+            padding: 16px;
+            margin-bottom: 16px;
+            transition: transform 0.1s;
+        }
+        .instance-card:active { transform: scale(0.98); }
+        .card-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 12px;
+        }
+        .card-header h2 { font-size: 1.1rem; font-weight: 600; }
+        .card-status {
+            font-size: 0.8rem;
+            padding: 4px 10px;
+            border-radius: 20px;
+            font-weight: 500;
+        }
+        .card-status.running { background: rgba(78, 204, 163, 0.2); color: var(--success); }
+        .card-status.stopped { background: rgba(160, 160, 176, 0.2); color: var(--text-dim); }
+        .card-status.launching { background: rgba(240, 165, 0, 0.2); color: var(--warning); }
+        .card-meta {
+            font-size: 0.8rem;
+            color: var(--text-dim);
+            margin-bottom: 12px;
+        }
+        .preview-area {
+            background: #000;
+            border-radius: 8px;
+            aspect-ratio: 16/9;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-bottom: 12px;
+            overflow: hidden;
+            cursor: pointer;
+            position: relative;
+        }
+        .preview-area img {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+        }
+        .preview-area .placeholder {
+            color: var(--text-dim);
+            font-size: 0.85rem;
+        }
+        .live-badge {
+            position: absolute;
+            top: 8px; right: 8px;
+            background: var(--primary);
+            color: white;
+            font-size: 0.7rem;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-weight: 600;
+            display: none;
+        }
+        .live-badge.active { display: block; }
+        .btn-row {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+            margin-bottom: 12px;
+        }
+        .btn {
+            flex: 1;
+            min-width: 80px;
+            padding: 12px 16px;
+            border: none;
+            border-radius: 8px;
+            font-size: 0.9rem;
+            font-weight: 500;
+            cursor: pointer;
+            text-align: center;
+            transition: opacity 0.2s;
+        }
+        .btn:active { opacity: 0.7; }
+        .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+        .btn-launch { background: var(--success); color: #1a1a2e; }
+        .btn-stop { background: var(--primary); color: white; }
+        .btn-restart { background: var(--warning); color: #1a1a2e; }
+        .btn-app { background: var(--surface); color: var(--text); border: 1px solid rgba(255,255,255,0.1); }
+        .btn-script { background: rgba(78, 204, 163, 0.15); color: var(--success); border: 1px solid rgba(78, 204, 163, 0.3); }
+        .section-label {
+            font-size: 0.8rem;
+            color: var(--text-dim);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 8px;
+            padding-top: 8px;
+            border-top: 1px solid rgba(255,255,255,0.05);
+        }
+        .scripts-section { margin-top: 8px; }
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: var(--text-dim);
+        }
+        .toast {
+            position: fixed;
+            bottom: 20px;
+            left: 50%; transform: translateX(-50%);
+            background: var(--surface);
+            color: var(--text);
+            padding: 12px 24px;
+            border-radius: 8px;
+            font-size: 0.85rem;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+            opacity: 0;
+            transition: opacity 0.3s;
+            z-index: 100;
+        }
+        .toast.show { opacity: 1; }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>🖥️ Emulator Manager</h1>
+        <span id="service-status"><span class="status-dot"></span></span>
+    </header>
+    <div id="emu-info" class="emu-info" style="display:none;"></div>
+    <div id="instances" class="loading">Connecting...</div>
+    <div id="toast" class="toast"></div>
+
+    <script>
+    const API = '';
+    let ws = null;
+    let streaming = {};  // index -> boolean
+
+    // --- API helpers ---
+    async function api(path, opts = {}) {
+        const resp = await fetch(API + path, {
+            headers: { 'Content-Type': 'application/json' },
+            ...opts,
+        });
+        if (!resp.ok) throw new Error(`${resp.status}: ${await resp.text()}`);
+        return resp.json();
+    }
+
+    function toast(msg) {
+        const el = document.getElementById('toast');
+        el.textContent = msg;
+        el.classList.add('show');
+        setTimeout(() => el.classList.remove('show'), 2500);
+    }
+
+    // --- Render ---
+    async function loadStatus() {
+        try {
+            const status = await api('/api/status');
+            const el = document.getElementById('emu-info');
+            const dot = document.querySelector('#service-status .status-dot');
+            if (status.emulator.detected) {
+                el.textContent = `${status.emulator.name} — ${status.emulator.install_dir}`;
+                el.style.display = 'block';
+                dot.className = 'status-dot online';
+            } else {
+                el.textContent = 'No emulator detected';
+                el.style.display = 'block';
+                dot.className = 'status-dot offline';
+            }
+        } catch (e) {
+            document.querySelector('#service-status .status-dot').className = 'status-dot offline';
+        }
+    }
+
+    async function loadInstances() {
+        try {
+            const instances = await api('/api/instances');
+            const scripts = await api('/api/scripts');
+            renderInstances(instances, scripts);
+        } catch (e) {
+            document.getElementById('instances').innerHTML =
+                '<div class="loading">Failed to connect. Is the service running?</div>';
+        }
+    }
+
+    function renderInstances(instances, scripts) {
+        const container = document.getElementById('instances');
+        if (!instances.length) {
+            container.innerHTML = '<div class="loading">No instances found</div>';
+            return;
+        }
+        container.innerHTML = instances.map(inst => renderCard(inst, scripts)).join('');
+    }
+
+    function renderCard(inst, scripts) {
+        const isRunning = inst.status === 'running';
+        const statusClass = inst.status === 'running' ? 'running' :
+                           inst.status === 'launching' ? 'launching' : 'stopped';
+        const statusIcon = isRunning ? '🟢' : '⚫';
+
+        let buttons = '';
+        if (!isRunning) {
+            buttons = `<div class="btn-row">
+                <button class="btn btn-launch" onclick="action(${inst.index}, 'launch')">▶ Launch</button>
+            </div>`;
+        } else {
+            buttons = `<div class="btn-row">
+                <button class="btn btn-stop" onclick="action(${inst.index}, 'stop')">⏹ Stop</button>
+                <button class="btn btn-restart" onclick="action(${inst.index}, 'restart')">🔄 Restart</button>
+            </div>`;
+        }
+
+        let preview = '';
+        if (isRunning) {
+            const isStreaming = streaming[inst.index];
+            preview = `<div class="preview-area" onclick="toggleStream(${inst.index})">
+                <span class="live-badge ${isStreaming ? 'active' : ''}" id="live-${inst.index}">▶ LIVE</span>
+                <img id="preview-${inst.index}" style="display:none;" />
+                <span class="placeholder" id="ph-${inst.index}">${isStreaming ? '' : '📸 Tap to preview'}</span>
+            </div>`;
+        }
+
+        let scriptsHtml = '';
+        if (isRunning) {
+            const running = scripts.flatMap(s =>
+                s.running_instances.filter(r => r.index === inst.index).map(r => ({ ...s, ...r }))
+            );
+            const available = scripts.filter(s =>
+                !s.running_instances.some(r => r.index === inst.index)
+            );
+
+            let scriptBtns = '';
+            for (const r of running) {
+                scriptBtns += `<button class="btn btn-script" onclick="openScriptUI('${r.name}', ${inst.index})">→ ${r.display_name}</button>`;
+                scriptBtns += `<button class="btn btn-stop" onclick="stopScript('${r.name}', ${inst.index})">⏹</button>`;
+            }
+            for (const s of available) {
+                scriptBtns += `<button class="btn btn-app" onclick="startScript('${s.name}', ${inst.index})">▶ ${s.display_name}</button>`;
+            }
+            if (scriptBtns) {
+                scriptsHtml = `<div class="scripts-section">
+                    <div class="section-label">Automation</div>
+                    <div class="btn-row">${scriptBtns}</div>
+                </div>`;
+            }
+        }
+
+        return `<div class="instance-card" id="card-${inst.index}">
+            <div class="card-header">
+                <h2>${statusIcon} ${inst.name}</h2>
+                <span class="card-status ${statusClass}">${inst.status}</span>
+            </div>
+            <div class="card-meta">Index ${inst.index} · ${inst.adb_serial}</div>
+            ${preview}
+            ${buttons}
+            ${scriptsHtml}
+        </div>`;
+    }
+
+    // --- Actions ---
+    async function action(index, verb) {
+        try {
+            await api(`/api/instances/${index}/${verb}`, { method: 'POST' });
+            toast(`${verb} sent to instance ${index}`);
+            setTimeout(loadInstances, 1500);
+        } catch (e) { toast(`Error: ${e.message}`); }
+    }
+
+    async function startScript(name, index) {
+        try {
+            await api(`/api/scripts/${name}/start`, {
+                method: 'POST',
+                body: JSON.stringify({ instance_index: index }),
+            });
+            toast(`Started ${name} on instance ${index}`);
+            setTimeout(loadInstances, 2000);
+        } catch (e) { toast(`Error: ${e.message}`); }
+    }
+
+    async function stopScript(name, index) {
+        try {
+            await api(`/api/scripts/${name}/stop`, {
+                method: 'POST',
+                body: JSON.stringify({ instance_index: index }),
+            });
+            toast(`Stopped ${name}`);
+            setTimeout(loadInstances, 1000);
+        } catch (e) { toast(`Error: ${e.message}`); }
+    }
+
+    function openScriptUI(name, index) {
+        window.location.href = `/scripts/${name}/${index}/`;
+    }
+
+    // --- WebSocket & Streaming ---
+    function connectWS() {
+        const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+        ws = new WebSocket(`${proto}//${location.host}/ws/status`);
+
+        ws.onmessage = (event) => {
+            const msg = JSON.parse(event.data);
+            if (msg.type === 'instance_status') {
+                loadInstances();  // Refresh on status change
+            } else if (msg.type === 'screenshot') {
+                const img = document.getElementById(`preview-${msg.index}`);
+                const ph = document.getElementById(`ph-${msg.index}`);
+                if (img) {
+                    img.src = `data:image/jpeg;base64,${msg.data}`;
+                    img.style.display = 'block';
+                    if (ph) ph.style.display = 'none';
+                }
+            }
+        };
+
+        ws.onclose = () => setTimeout(connectWS, 3000);
+        ws.onerror = () => ws.close();
+    }
+
+    function toggleStream(index) {
+        if (!ws || ws.readyState !== WebSocket.OPEN) return;
+        streaming[index] = !streaming[index];
+        const action = streaming[index] ? 'subscribe_screenshot' : 'unsubscribe_screenshot';
+        ws.send(JSON.stringify({ action, index }));
+
+        const badge = document.getElementById(`live-${index}`);
+        const ph = document.getElementById(`ph-${index}`);
+        if (badge) badge.classList.toggle('active', streaming[index]);
+        if (ph && streaming[index]) ph.textContent = '';
+        if (ph && !streaming[index]) { ph.textContent = '📸 Tap to preview'; ph.style.display = 'block'; }
+    }
+
+    // --- Init ---
+    loadStatus();
+    loadInstances();
+    connectWS();
+    setInterval(loadInstances, 10000);  // Fallback poll every 10s
+    </script>
+</body>
+</html>
