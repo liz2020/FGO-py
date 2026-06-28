@@ -192,7 +192,9 @@
 <body>
     <header>
         <h1>FGO-py</h1>
-        <a class="back-link" href="/">← 🏠 Manager</a>
+        {% if manager_url %}
+        <a class="back-link" href="{{ manager_url }}">← 🏠 Manager</a>
+        {% endif %}
     </header>
 
     <div class="device-info">
@@ -313,10 +315,14 @@
     }
 
     // --- API ---
+    // When behind emu manager proxy, API calls go through the proxy path
+    // When accessed directly, they go to the same origin
+    const BASE = '';  // relative URLs work in both cases
+
     async function post(url, data = {}) {
         const form = new URLSearchParams();
         for (const [k, v] of Object.entries(data)) form.append(k, v);
-        const resp = await fetch(url, { method: 'POST', body: form });
+        const resp = await fetch(BASE + url, { method: 'POST', body: form });
         return resp.text();
     }
 
@@ -328,7 +334,7 @@
     }
 
     async function teamupLoad(name) {
-        const resp = await fetch('/api/teamup/load', {
+        const resp = await fetch(BASE + 'api/teamup/load', {
             method: 'POST',
             body: new URLSearchParams({ teamName: name }),
         });
@@ -347,7 +353,7 @@
 
     async function teamupSave() {
         const name = document.getElementById('teamName').value;
-        await post('/api/teamup/save', { teamName: name, data: JSON.stringify(dumpTeamup()) });
+        await post('api/teamup/save', { teamName: name, data: JSON.stringify(dumpTeamup()) });
         toast('编队已保存');
     }
 
@@ -355,9 +361,9 @@
 
     async function run(mode) {
         // Apply teamup first
-        await post('/api/apply', { data: JSON.stringify(dumpTeamup()) });
-        const endpoint = mode === 'main' ? '/api/run/main' :
-                        mode === 'classic' ? '/api/run/classic' : '/api/run/battle';
+        await post('api/apply', { data: JSON.stringify(dumpTeamup()) });
+        const endpoint = mode === 'main' ? 'api/run/main' :
+                        mode === 'classic' ? 'api/run/classic' : 'api/run/battle';
         const data = mode === 'battle' ? {} : {
             appleTotal: document.getElementById('appleTotal').value,
             appleKind: document.getElementById('appleKind').selectedIndex,
@@ -368,19 +374,19 @@
     }
 
     async function action(name) {
-        await post(`/api/${name}`);
+        await post(`api/${name}`);
         toast(name === 'pause' ? '已挂起' : '已终止');
     }
 
     async function stopLater() {
         const value = prompt('剩余战斗数量');
         if (!value || isNaN(value)) return;
-        await post('/api/stopLater', { value });
+        await post('api/stopLater', { value });
         toast(`将在 ${value} 场后终止`);
     }
 
     async function takeScreenshot() {
-        const resp = await fetch('/api/screenshot', { method: 'POST' });
+        const resp = await fetch('api/screenshot', { method: 'POST' });
         if (!resp.ok) { toast('截图失败'); return; }
         const b64 = await resp.text();
         const container = document.getElementById('screenshot-container');
@@ -389,7 +395,7 @@
 
     async function doBench() {
         toast('测试中...');
-        const result = await post('/api/bench');
+        const result = await post('api/bench');
         toast(result);
     }
 

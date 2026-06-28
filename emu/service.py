@@ -226,7 +226,11 @@ def create_app() -> FastAPI:
 
         b = get_backend()
         serial = b.adb_serial(instance_index)
-        proc = registry.start(name, instance_index, serial)
+
+        # Use the repo root as cwd for script processes
+        import pathlib
+        repo_root = pathlib.Path(__file__).parent.parent
+        proc = registry.start(name, instance_index, serial, cwd=repo_root)
         return {
             "status": proc.status,
             "pid": proc.pid,

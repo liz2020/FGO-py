@@ -11,11 +11,14 @@ app=Flask(__name__,static_folder='fgoWebUI',template_folder='fgoWebUI')
 
 @app.route('/')
 def root():
-    return redirect('/index')
+    return redirect('index')
 
 @app.route('/index')
 def index():
-    return render_template('index.html',teamups=teamup.sections(),config=config,device=fgoDevice.device.name)
+    # X-Script-Base is set by the emu manager reverse proxy
+    script_base = request.headers.get('X-Script-Base', '')
+    manager_url = '/' if script_base else None
+    return render_template('index.html',teamups=teamup.sections(),config=config,device=fgoDevice.device.name,manager_url=manager_url)
 
 @app.route('/api/connect',methods=['POST'])
 def connect():
