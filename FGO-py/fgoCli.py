@@ -319,4 +319,4 @@ parser_teamup_set_servant.add_argument('value',help='Info value (e.g. 1007-xxxx-
 parser_169=ArgParser(prog='169',description=Cmd.do_169.__doc__)
 parser_169.add_argument('action',help='Action',type=str.lower,choices=['invoke','revoke'])
 
-def main(config):Cmd(config).cmdloop()
+def main(config, **kwargs):Cmd(config).cmdloop()

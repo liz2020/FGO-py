@@ -68,7 +68,7 @@ def _register_default_scripts():
         display_name="FGO-py",
         package_filter="com.aniplex.fategrandorder*",
         base_port=15001,
-        start_command="uv run python FGO-py/fgo.py --web --device {serial} --port {port}",
+        start_command="uv run python FGO-py/fgo.py web --device ldplayer:{index} --port {port}",
     ))
 
 

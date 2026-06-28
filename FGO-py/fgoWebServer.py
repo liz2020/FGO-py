@@ -87,6 +87,6 @@ def bench():
         return 'Device not available'
     return(lambda bench:f'{f"点击 {bench[0]:.2f}ms"if bench[0]else""}{", "if all(bench)else""}{f"截图 {bench[1]:.2f}ms"if bench[1]else""}')(fgoKernel.bench(15))
 
-def main(config):
+def main(config, port=15000):
     globals()['config']=config
-    app.run(host='0.0.0.0', port='15000')
+    app.run(host='127.0.0.1', port=port)
