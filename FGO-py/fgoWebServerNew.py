@@ -15,6 +15,7 @@ from pydantic import BaseModel
 import fgoDevice
 import fgoKernel
 from fgoLogging import getLogger
+from fgoSchedule import schedule
 from fgoTaskQueue import Task, task_queue, task_worker
 from fgoQuestCatalog import get_catalog
 
@@ -68,7 +69,7 @@ def _on_task_event(event: dict):
     """Called from worker thread; schedules async broadcast."""
     loop = _loop
     if loop and loop.is_running():
-        asyncio.run_coroutine_threadsafe(ws_manager.broadcast(event), loop)
+        loop.call_soon_threadsafe(asyncio.ensure_future, ws_manager.broadcast(event))
 
 
 task_queue.subscribe(_on_task_event)
@@ -115,6 +116,7 @@ async def add_task(req: AddTaskRequest):
         raise HTTPException(400, f"Unknown task type: {req.type}")
     task = Task(type=req.type, params=req.params)
     task_queue.add(task)
+    await ws_manager.broadcast({"event": "queue_updated", "queue": task_queue.list_all()})
     return {"id": task.id, "task": task.to_dict()}
 
 
@@ -122,30 +124,29 @@ async def add_task(req: AddTaskRequest):
 async def remove_task(task_id: str):
     if not task_queue.remove(task_id):
         raise HTTPException(404, "Task not found in queue")
+    await ws_manager.broadcast({"event": "queue_updated", "queue": task_queue.list_all()})
     return {"ok": True}
 
 
 @app.post("/api/control/start")
 async def control_start():
-    task_queue.start()
+    task_queue._running = True
+    schedule.reset()
+    task_queue._has_work.set()
+    await ws_manager.broadcast({"event": "queue_started"})
     return {"ok": True, "running": True}
 
 
 @app.post("/api/control/pause")
 async def control_pause():
-    task_queue.pause()
+    schedule.pause()
+    await ws_manager.broadcast({"event": "queue_paused"})
     return {"ok": True}
 
 
 @app.post("/api/control/stop")
 async def control_stop():
     task_queue.stop_current()
-    return {"ok": True}
-
-
-@app.post("/api/control/stop-all")
-async def control_stop_all():
-    task_queue.stop_all()
     return {"ok": True}
 
 

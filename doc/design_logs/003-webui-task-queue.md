@@ -49,9 +49,9 @@ Each queue item is a typed task:
 @dataclass
 class Task:
     id: str              # UUID
-    type: str            # "battle" | "goto" | "operation" | "call"
+    type: str            # "battle" | "operation"
     params: dict         # type-specific parameters
-    status: str          # "pending" | "running" | "done" | "error" | "cancelled"
+    status: str          # "pending" | "active" | "paused" | "error"
     result: dict | None  # filled on completion
     created_at: float
     started_at: float | None
@@ -107,9 +107,8 @@ They can be added to the web queue later if needed.
 | DELETE | `/api/queue/{id}` | Cancel/remove a pending task |
 | POST | `/api/queue/{id}/move` | Reorder (body: `{"position": 0}`) |
 | POST | `/api/control/start` | Start processing the queue (resume if paused) |
-| POST | `/api/control/pause` | Pause current execution |
-| POST | `/api/control/stop` | Stop current task (moves to next in queue) |
-| POST | `/api/control/stop-all` | Stop and clear entire queue |
+| POST | `/api/control/pause` | Pause current execution (queue stops after current task) |
+| POST | `/api/control/stop` | Stop current task immediately |
 | GET | `/api/quests` | List available quests for navigation |
 
 ### WebSocket (real-time status)
@@ -131,33 +130,38 @@ Single-column, top-to-bottom layout optimized for phone screens:
 
 ```
 ┌─────────────────────────────────┐
+│  [← Manager]          FGO-py    │
+├─────────────────────────────────┤
 │  📷 Game Screen (full width)    │
 │  ┌─────────────────────────────┐│
 │  │                             ││
 │  │      (live screenshot)      ││
 │  │                             ││
 │  └─────────────────────────────┘│
+│  [● Live] toggle button         │
 ├─────────────────────────────────┤
 │  🎮 Controls                    │
-│  [▶ Start] [⏸ Pause] [⏹ Stop] │
+│  [▶ Start] [⏸ Pause]           │
 │  Status: 雅戈泰 #3 — 2/5 T3    │
+├─────────────────────────────────┤
+│  📝 Queue                       │
+│  1. 雅戈泰 #3 ×5         [🗑] │
+│  2. 冬木 #7 ×10           [🗑] │
+│  3. 新宿 #2 ×3            [🗑] │
 ├─────────────────────────────────┤
 │  📋 Add Quest                   │
 │  Part:    [Part 2 ▼]           │
 │  Chapter: [雅戈泰 ▼]           │
 │  Quest:   [Node 3 ▼]           │
 │  Repeat:  [5]  [+ Add]         │
-├─────────────────────────────────┤
-│  📝 Queue                       │
-│  1. 雅戈泰 #3 ×5         [🗑] │
-│  2. 冬木 #7 ×10           [🗑] │
-│  3. 新宿 #2 ×3            [🗑] │
 └─────────────────────────────────┘
 ```
 
-- Game screenshot at top, full width (maintains 16:9 aspect ratio)
-- Controls + status immediately below for quick access
-- Quest selector and queue below the fold
+- Navigation back to emu manager at top
+- Game screenshot with live toggle (auto-refresh every 2s when enabled)
+- Controls + status immediately below
+- Queue list above quest selector (more frequently viewed)
+- Quest selector at bottom (used less often once queue is set up)
 - On wider screens (tablet/desktop), controls + queue can sit side-by-side below the screenshot
 
 

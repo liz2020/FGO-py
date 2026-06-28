@@ -60,6 +60,8 @@ class LDPlayerDevice:
             pid=self._pid, width=self._width, height=self._height,
         )
         self.name = f"ldplayer:{index}"
+        # Detect running FGO package
+        self.package = self._detect_fgo_package()
         # Scale factor: game coordinates are in 1280x720 space
         self._scale_x = self._width / 1280.0
         self._scale_y = self._height / 720.0
@@ -111,6 +113,24 @@ class LDPlayerDevice:
 
     def pinch(self):
         pass  # Not needed for FGO
+
+    def _detect_fgo_package(self) -> str:
+        """Detect which FGO package is installed/running on this instance."""
+        import subprocess
+        from fgoConst import PACKAGE_TO_REGION
+        for pkg in PACKAGE_TO_REGION:
+            try:
+                result = subprocess.run(
+                    [str(self._console.ldconsole), "adb", "--index", str(self._index),
+                     "--command", f"shell pm path {pkg}"],
+                    capture_output=True, text=True, timeout=5,
+                    creationflags=subprocess.CREATE_NO_WINDOW,
+                )
+                if "package:" in result.stdout:
+                    return pkg
+            except Exception:
+                continue
+        return "com.bilibili.fatego"  # default to CN
 
     def invoke169(self):
         pass  # LDPlayer already configured at correct resolution

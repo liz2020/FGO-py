@@ -144,7 +144,17 @@
             font-size: 0.85rem;
         }
         .queue-item .info { flex: 1; }
-        .queue-item .count { color: var(--text-dim); margin-left: 8px; }
+        .queue-item .status-badge {
+            font-size: 0.75rem;
+            padding: 2px 8px;
+            border-radius: 4px;
+            margin-left: 8px;
+            white-space: nowrap;
+        }
+        .queue-item .status-badge.active { background: rgba(78, 204, 163, 0.2); color: var(--success); }
+        .queue-item .status-badge.pending { background: rgba(160, 160, 176, 0.2); color: var(--text-dim); }
+        .queue-item .status-badge.paused { background: rgba(240, 165, 0, 0.2); color: var(--warning); }
+        .queue-item .status-badge.error { background: rgba(233, 69, 96, 0.2); color: var(--primary); }
         .queue-item .remove-btn {
             background: none;
             border: none;
@@ -161,13 +171,24 @@
         }
 
         /* Connection badge */
+        .header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 12px;
+        }
+        .back-link {
+            color: var(--text-dim);
+            text-decoration: none;
+            font-size: 0.85rem;
+        }
+        .back-link:hover { color: var(--text); }
         .connection {
             display: flex;
             align-items: center;
             gap: 6px;
             font-size: 0.75rem;
             color: var(--text-dim);
-            margin-bottom: 12px;
         }
         .connection .dot {
             width: 8px;
@@ -176,17 +197,46 @@
             background: var(--primary);
         }
         .connection.connected .dot { background: var(--success); }
+
+        /* Live toggle */
+        .screenshot-controls {
+            display: flex;
+            justify-content: flex-end;
+            margin-top: 6px;
+            margin-bottom: 12px;
+        }
+        .btn-live {
+            padding: 4px 12px;
+            border-radius: 6px;
+            font-size: 0.8rem;
+            font-weight: 600;
+            cursor: pointer;
+            border: 1px solid var(--text-dim);
+            background: transparent;
+            color: var(--text-dim);
+        }
+        .btn-live.active {
+            border-color: var(--success);
+            color: var(--success);
+            background: rgba(78, 204, 163, 0.1);
+        }
     </style>
 </head>
 <body>
-    <div class="connection" id="connStatus">
-        <span class="dot"></span>
-        <span>Disconnected</span>
+    <div class="header">
+        <a class="back-link" id="backLink" href="/">← Manager</a>
+        <div class="connection" id="connStatus">
+            <span class="dot"></span>
+            <span>Disconnected</span>
+        </div>
     </div>
 
     <!-- Game Screenshot -->
-    <div class="screenshot-container" id="screenshotBox">
+    <div class="screenshot-container" id="screenshotBox" onclick="takeScreenshot()">
         <div class="no-image">Tap to capture screenshot</div>
+    </div>
+    <div class="screenshot-controls">
+        <button class="btn-live" id="btnLive" onclick="toggleLive()">● Live</button>
     </div>
 
     <!-- Controls -->
@@ -195,8 +245,15 @@
         <div class="btn-row">
             <button class="btn btn-start" id="btnStart" onclick="controlStart()">▶ Start</button>
             <button class="btn btn-pause" id="btnPause" onclick="controlPause()">⏸ Pause</button>
-            <button class="btn btn-stop" id="btnStop" onclick="controlStop()">⏹ Stop</button>
         </div>
+    </div>
+
+    <!-- Task Queue -->
+    <div class="section">
+        <h3>Queue</h3>
+        <ul class="queue-list" id="queueList">
+            <li class="queue-empty">No tasks in queue</li>
+        </ul>
     </div>
 
     <!-- Quest Selector -->
@@ -221,14 +278,6 @@
         <button class="btn-add" onclick="addToQueue()">+ Add to Queue</button>
     </div>
 
-    <!-- Task Queue -->
-    <div class="section">
-        <h3>Queue</h3>
-        <ul class="queue-list" id="queueList">
-            <li class="queue-empty">No tasks in queue</li>
-        </ul>
-    </div>
-
 <script>
 const API = (() => {
     // Detect proxy base path (e.g. /scripts/fgo/0)
@@ -238,6 +287,17 @@ const API = (() => {
 let ws = null;
 let catalog = null;
 let queueData = [];
+let liveInterval = null;
+
+// Set back link to emu manager
+(function() {
+    const match = location.pathname.match(/^\/scripts\//);
+    if (match) {
+        document.getElementById('backLink').href = '/';
+    } else {
+        document.getElementById('backLink').style.display = 'none';
+    }
+})();
 
 // --- WebSocket ---
 function getWsUrl() {
@@ -343,14 +403,19 @@ async function fetchCatalog() {
 
 async function controlStart() {
     await fetch(`${API}/api/control/start`, { method: 'POST' });
+    // Small delay for worker to pick up task
+    setTimeout(fetchQueue, 300);
+    startPolling();
 }
 
 async function controlPause() {
     await fetch(`${API}/api/control/pause`, { method: 'POST' });
+    setTimeout(fetchQueue, 300);
+    stopPolling();
 }
 
 async function controlStop() {
-    await fetch(`${API}/api/control/stop-all`, { method: 'POST' });
+    await fetch(`${API}/api/control/stop`, { method: 'POST' });
 }
 
 async function addToQueue() {
@@ -358,22 +423,30 @@ async function addToQueue() {
     if (!sel.value) return;
     const quest = JSON.parse(sel.value);
     const count = parseInt(document.getElementById('inputCount').value) || 1;
-    await fetch(`${API}/api/queue`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-            type: 'operation',
-            params: {
-                quests: [{ quest, count }],
-                apple_total: 0,
-                apple_kind: 'gold',
-            }
-        })
-    });
+    try {
+        const res = await fetch(`${API}/api/queue`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                type: 'operation',
+                params: {
+                    quests: [{ quest, count }],
+                    apple_total: 0,
+                    apple_kind: 'gold',
+                }
+            })
+        });
+        if (!res.ok) console.error('Add failed:', await res.text());
+        // Always refresh queue (fallback if WebSocket not connected)
+        await fetchQueue();
+    } catch (e) {
+        console.error('Add to queue error:', e);
+    }
 }
 
 async function removeFromQueue(taskId) {
     await fetch(`${API}/api/queue/${taskId}`, { method: 'DELETE' });
+    await fetchQueue();
 }
 
 async function takeScreenshot() {
@@ -426,16 +499,42 @@ function renderQueue() {
     }
     el.innerHTML = queueData.map(task => {
         const desc = describeTask(task);
-        const statusBadge = task.status === 'running' ? ' 🔄' : '';
+        const statusLabel = {active: 'Active', pending: 'Pending', paused: 'Paused', error: 'Error'}[task.status] || task.status;
+        const canRemove = task.status !== 'active';
         return `<li class="queue-item">
-            <span class="info">${desc}${statusBadge}</span>
-            <button class="remove-btn" onclick="removeFromQueue('${task.id}')">🗑</button>
+            <span class="info">${desc}</span>
+            <span class="status-badge ${task.status}">${statusLabel}</span>
+            ${canRemove ? `<button class="remove-btn" onclick="removeFromQueue('${task.id}')">🗑</button>` : ''}
         </li>`;
     }).join('');
 }
 
-// --- Screenshot tap to refresh ---
-document.getElementById('screenshotBox').addEventListener('click', takeScreenshot);
+// --- Polling (fallback when WebSocket not connected) ---
+let pollInterval = null;
+function startPolling() {
+    if (pollInterval) return;
+    pollInterval = setInterval(fetchQueue, 3000);
+}
+function stopPolling() {
+    if (pollInterval) {
+        clearInterval(pollInterval);
+        pollInterval = null;
+    }
+}
+
+// --- Live screenshot toggle ---
+function toggleLive() {
+    const btn = document.getElementById('btnLive');
+    if (liveInterval) {
+        clearInterval(liveInterval);
+        liveInterval = null;
+        btn.classList.remove('active');
+    } else {
+        btn.classList.add('active');
+        takeScreenshot();
+        liveInterval = setInterval(takeScreenshot, 2000);
+    }
+}
 
 // --- Init ---
 connectWS();

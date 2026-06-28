@@ -19,7 +19,7 @@ class Task:
     id: str = field(default_factory=lambda: uuid.uuid4().hex[:8])
     type: str = ""  # "operation" | "battle"
     params: dict = field(default_factory=dict)
-    status: str = "pending"  # "pending" | "running" | "done" | "error" | "cancelled"
+    status: str = "pending"  # "pending" | "active" | "paused" | "error"
     result: dict | None = None
     created_at: float = field(default_factory=time.time)
     started_at: float | None = None
@@ -52,23 +52,21 @@ class TaskQueue:
     def add(self, task: Task) -> Task:
         with self._lock:
             self._tasks.append(task)
-            if self._running:
-                self._has_work.set()
-        self._broadcast({"event": "queue_updated", "queue": self.list_all()})
         return task
 
     def remove(self, task_id: str) -> bool:
         with self._lock:
+            # Check pending tasks
             for i, t in enumerate(self._tasks):
                 if t.id == task_id:
-                    t.status = "cancelled"
                     del self._tasks[i]
-                    self._history.append(t)
-                    break
-            else:
-                return False
-        self._broadcast({"event": "queue_updated", "queue": self.list_all()})
-        return True
+                    return True
+            # Check history (paused/errored tasks)
+            for i, t in enumerate(self._history):
+                if t.id == task_id:
+                    del self._history[i]
+                    return True
+        return False
 
     def list_pending(self) -> list[dict]:
         with self._lock:
@@ -80,20 +78,20 @@ class TaskQueue:
             if self._current:
                 result.append(self._current.to_dict())
             result.extend(t.to_dict() for t in self._tasks)
+            # Include recent history (last 10)
+            for t in self._history[-10:]:
+                result.append(t.to_dict())
             return result
 
     def start(self):
         """Start or resume queue processing."""
         self._running = True
-        if self._tasks:
-            self._has_work.set()
         schedule.reset()
-        self._broadcast({"event": "queue_started"})
+        self._has_work.set()
 
     def pause(self):
         """Pause queue processing (finishes current task's current action, then waits)."""
         schedule.pause()
-        self._broadcast({"event": "queue_paused"})
 
     def stop_current(self):
         """Stop the currently running task, move to next."""
@@ -102,23 +100,23 @@ class TaskQueue:
     def stop_all(self):
         """Stop current task and clear the queue."""
         with self._lock:
-            for t in self._tasks:
-                t.status = "cancelled"
-                self._history.append(t)
             self._tasks.clear()
         schedule.stop('Stopped all')
-        self._broadcast({"event": "queue_updated", "queue": self.list_all()})
 
     def pop_next(self) -> Task | None:
         """Block until a task is available and queue is running. Returns None if stopped."""
         while True:
             self._has_work.wait(timeout=1.0)
             if not self._running:
+                self._has_work.clear()
                 continue
             with self._lock:
                 if self._tasks:
                     return self._tasks.popleft()
+                # Queue is empty — go idle
+                self._running = False
                 self._has_work.clear()
+            self._broadcast({"event": "queue_idle"})
 
     def subscribe(self, callback: Callable):
         self._subscribers.append(callback)
@@ -153,27 +151,32 @@ class TaskWorker(threading.Thread):
                 continue
 
             self.queue._current = task
-            task.status = "running"
+            task.status = "active"
             task.started_at = time.time()
             self.queue._broadcast({"event": "task_started", "task": task.to_dict()})
 
             try:
                 schedule.reset()
                 result = self._execute(task)
-                task.status = "done"
+                # Task completed successfully — remove from queue
+                task.finished_at = time.time()
                 task.result = result or {}
             except ScriptStop as e:
-                task.status = "error"
+                task.status = "paused"
                 task.result = {"error": str(e)}
-                logger.info(f"Task {task.id} stopped: {e}")
+                logger.info(f"Task {task.id} paused: {e}")
             except Exception as e:
                 task.status = "error"
                 task.result = {"error": repr(e)}
+                task.finished_at = time.time()
                 logger.exception(f"Task {task.id} failed")
             finally:
-                task.finished_at = time.time()
                 self.queue._current = None
-                self.queue._history.append(task)
+                if task.status == "active":
+                    # Completed successfully — don't keep in history
+                    task.status = "pending"  # will not be shown
+                else:
+                    self.queue._history.append(task)
                 self.queue._broadcast({"event": "task_completed", "task": task.to_dict()})
 
     def _execute(self, task: Task) -> dict:
@@ -186,11 +189,15 @@ class TaskWorker(threading.Thread):
                 )
                 # Start progress monitor
                 self._start_progress_monitor(task)
+                logger.info(f"Starting operation: quests={quests}, apples={apple_total}")
                 op = fgoKernel.Operation(quests, apple_total, apple_kind)
+                logger.info(f"Operation created, calling op()")
                 op()
+                logger.info(f"Operation completed")
                 return {"battle_count": getattr(op, 'battleCount', 0)}
             case "battle":
                 self._start_progress_monitor(task)
+                logger.info("Starting battle")
                 fgoKernel.Battle()()
                 return {}
             case _:
