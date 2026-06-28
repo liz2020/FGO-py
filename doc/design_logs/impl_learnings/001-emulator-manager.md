@@ -1,0 +1,102 @@
+# Implementation Learnings: Emulator Manager (001)
+
+Captures surprises, workarounds, and design pivots discovered while implementing `doc/design_logs/001-emulator-manager.md`.
+
+---
+
+## 1. LDPlayer 14 Screenshot Capture — DLL vtable, not shared memory
+
+**PRD assumption:** Shared memory (`ldopengl0`, `ldopengl1`, …) for zero-copy screenshot.
+
+**Reality:** LDPlayer 14 does **not** expose shared memory segments for screenshots. The actual mechanism is a C++ vtable interface in `ldopengl64.dll`, discovered via [MaaXYZ/EmulatorExtras](https://github.com/MaaXYZ/EmulatorExtras) (`LD/dnopengl/dnopengl.h`).
+
+**How it works:**
+```
+CreateScreenShotInstance(playeridx, playerpid) → IScreenShotClass*
+vtable[0] = destructor
+vtable[1] = cap()   → void*   (raw BGR pixel data, bottom-up)
+vtable[2] = release() → void
+```
+
+- Must pass the **PID** (from `list2`) and know **width×height** to interpret the buffer.
+- Pixel data is BGR, bottom-up — needs `np.flip(arr, axis=0)` and BGR→RGB conversion.
+- Factory function uses `__cdecl` calling convention (not stdcall).
+
+**Takeaway:** Always prototype screenshot capture against the real emulator early. Documentation from the emulator vendor is nonexistent; open-source automation frameworks are the best reference.
+
+---
+
+## 2. LDPlayer 14 `list2` extended format
+
+**PRD assumption:** `list2` returns `index,name,top_hwnd,bind_hwnd,is_running,pid,vbox_pid` (7 fields).
+
+**Reality:** LDPlayer 14 outputs **10 fields**: `index,name,top_hwnd,bind_hwnd,is_running,pid,vbox_pid,width,height,dpi`.
+
+- The `is_running` field is not strictly `0`/`1` — non-zero means running.
+- Instance names can contain Chinese characters, causing `UnicodeEncodeError` on `cp1252` consoles.
+
+**Takeaway:** Parse defensively (handle variable field counts). Width/height from `list2` are needed for the screenshot buffer size.
+
+---
+
+## 3. LDPlayer 14 ADB ports are not exposed by default
+
+**PRD assumption:** Each instance has a predictable ADB port (`5555 + 2*index`).
+
+**Reality:** LDPlayer 14 does not open ADB ports by default. Port scans across 5553–5600 and common ranges found nothing.
+
+**Workaround:** Use `ldconsole adb --index N --command "shell input tap X Y"` for touch/swipe input instead of connecting via ADB directly. This avoids the ADB dependency entirely.
+
+**Takeaway:** Don't assume ADB connectivity. The `ldconsole adb` passthrough is reliable and doesn't require port mapping.
+
+---
+
+## 4. Python module entry point: `python -m emu.service` vs `python -m emu`
+
+**Issue:** `python -m emu.service` runs `service.py` as a script (it doesn't find `__main__.py`). The correct invocation is `python -m emu`, which triggers `emu/__main__.py`.
+
+**Takeaway:** Document the run command clearly. If the package has a `__main__.py`, always use `python -m <package>`.
+
+---
+
+## 5. Reverse proxy URL rewriting
+
+**Problem:** FGO-py web UI uses absolute API paths (`/api/teamup/load`). When accessed via the emu manager proxy at `/scripts/fgo/0/`, absolute paths bypass the proxy and hit the emu manager's own API.
+
+**Solution:**
+- Changed all fetch URLs to **relative** (no leading `/`): `api/teamup/load`
+- From `/scripts/fgo/0/index`, relative `api/teamup/load` resolves to `/scripts/fgo/0/api/teamup/load` → proxy forwards correctly.
+- From `/index` (direct access), relative `api/teamup/load` resolves to `/api/teamup/load` → hits FGO-py directly.
+- Flask redirect `redirect('/index')` → `redirect('index')` to preserve the proxy base path.
+
+**Also:** The "← Manager" back-link is only shown when the `X-Script-Base` request header is present (set by the proxy), avoiding a confusing link when accessing FGO-py directly.
+
+**Takeaway:** When building apps that may be served behind a reverse proxy, use relative URLs from the start. Proxy-awareness headers (`X-Script-Base`, `X-Forwarded-Prefix`) let the app adapt.
+
+---
+
+## 6. Subprocess pipe buffer deadlock
+
+**Problem:** `subprocess.Popen(..., stdout=PIPE, stderr=PIPE)` for spawned scripts can deadlock if the child writes enough output to fill the OS pipe buffer (~64KB) and nobody reads it.
+
+**Solution:** Use `subprocess.DEVNULL` for fire-and-forget script processes. If logging is needed later, redirect to log files instead.
+
+**Takeaway:** Only use `PIPE` if you actively consume the output (e.g., `communicate()`). For long-lived child processes, use `DEVNULL` or file handles.
+
+---
+
+## 7. `.git/HEAD` is unreliable in worktrees
+
+**Problem:** `fgo.py` reads `../.git/HEAD` to determine the current branch. In a git worktree, `.git` is a file (not a directory) pointing to the main checkout's `.git` directory, and the relative path `../.git/HEAD` may not exist.
+
+**Solution:** Wrapped in `try/except` — branch detection is non-critical and gracefully degrades.
+
+**Takeaway:** Avoid relying on `.git` directory structure directly. Use `git rev-parse` or `gitpython` for robust branch detection.
+
+---
+
+## 8. PySide6 removal was straightforward
+
+Removing the PySide6 GUI (6 files) and switching the default entry point from `gui` to `web` had no ripple effects. The web UI (Flask + vanilla JS) is a complete replacement for the desktop GUI, and the mobile-responsive dark theme works well on both phone and desktop.
+
+**Takeaway:** Decoupled UI layers make migration painless. The web-first approach is better for the remote-access use case (Tailscale from phone).
