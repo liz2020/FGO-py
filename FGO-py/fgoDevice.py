@@ -30,11 +30,11 @@ def bs5(*args):
 
 
 class LDPlayerDevice:
-    """LDPlayer device using emu module for fast screenshots + ADB for touch."""
+    """LDPlayer device using emu module for fast screenshots + ldconsole for input."""
     def __init__(self, index: int):
         import sys, os
         sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-        from emu.ldplayer import LDPlayerBackend
+        from emu.ldplayer import LDPlayerBackend, LDConsole
         from emu.ldopengl import LDOpenGL
 
         self.backend = LDPlayerBackend()
@@ -47,54 +47,76 @@ class LDPlayerDevice:
         item = next((i for i in raw if i["index"] == index), None)
         if item is None:
             raise RuntimeError(f"LDPlayer instance {index} not found")
+        if not item.get("is_running"):
+            raise RuntimeError(f"LDPlayer instance {index} is not running")
 
         self._index = index
         self._width = item.get("width", 1280)
         self._height = item.get("height", 720)
         self._pid = item.get("pid", 0) or 0
+        self._console = console
         self._opengl = LDOpenGL(
             console.install_dir, index,
             pid=self._pid, width=self._width, height=self._height,
         )
-        self._serial = console.adb_serial(index)
-
-        # Set up ADB touch via airtest Android (connect without screenshot override)
-        self._android = Android(self._serial)
         self.name = f"ldplayer:{index}"
+        # Scale factor: game coordinates are in 1280x720 space
+        self._scale_x = self._width / 1280.0
+        self._scale_y = self._height / 720.0
 
     @property
     def available(self):
-        return self._android.available if self._android.name else False
+        return True  # If we got here, the instance is running
 
     def screenshot(self):
         """Fast screenshot via LDOpenGL DLL."""
         import cv2
         img = self._opengl.screenshot()
         if img is None:
-            # Fallback to ADB
-            return self._android.screenshot()
+            return None
         # Resize to standard 1280x720 if needed
         if img.shape[:2] != (720, 1280):
             img = cv2.resize(img, (1280, 720), interpolation=cv2.INTER_CUBIC)
         return img
 
     def touch(self, pos):
-        self._android.touch(pos)
+        """Touch at game coordinates (1280x720 space) via ldconsole."""
+        import subprocess
+        x = int(pos[0] * self._scale_x)
+        y = int(pos[1] * self._scale_y)
+        subprocess.run(
+            [str(self._console.ldconsole), "adb", "--index", str(self._index),
+             "--command", f"shell input tap {x} {y}"],
+            capture_output=True, timeout=5,
+            creationflags=subprocess.CREATE_NO_WINDOW,
+        )
 
     def press(self, key):
-        self._android.press(key)
+        """Press a mapped key (touch at key position)."""
+        from fgoConst import KEYMAP
+        if key in KEYMAP:
+            self.touch(KEYMAP[key])
 
     def swipe(self, begin, end):
-        self._android.swipe(begin, end)
+        """Swipe from begin to end in game coordinates."""
+        import subprocess
+        x1, y1 = int(begin[0] * self._scale_x), int(begin[1] * self._scale_y)
+        x2, y2 = int(end[0] * self._scale_x), int(end[1] * self._scale_y)
+        subprocess.run(
+            [str(self._console.ldconsole), "adb", "--index", str(self._index),
+             "--command", f"shell input swipe {x1} {y1} {x2} {y2} 300"],
+            capture_output=True, timeout=10,
+            creationflags=subprocess.CREATE_NO_WINDOW,
+        )
 
     def pinch(self):
-        self._android.pinch()
+        pass  # Not needed for FGO
 
     def invoke169(self):
-        self._android.invoke169()
+        pass  # LDPlayer already configured at correct resolution
 
     def revoke169(self):
-        self._android.revoke169()
+        pass
 
 
 class Device:
