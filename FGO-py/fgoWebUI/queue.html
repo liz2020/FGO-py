@@ -272,12 +272,6 @@
         </ul>
     </div>
 
-    <!-- Cancelled Tasks -->
-    <div class="section" id="cancelledSection" style="display:none;">
-        <h3>Cancelled</h3>
-        <ul class="queue-list" id="cancelledList"></ul>
-    </div>
-
     <!-- Quest Selector -->
     <div class="section">
         <h3>Add Quest</h3>
@@ -307,7 +301,7 @@ const API = (() => {
 })();
 let ws = null;
 let catalog = null;
-let state = { active: null, pending: [], cancelled: [], running: false };
+let state = { active: null, pending: [], running: false };
 let liveInterval = null;
 
 // Back link visibility
@@ -376,7 +370,6 @@ function handleEvent(msg) {
 function render() {
     renderActive();
     renderPending();
-    renderCancelled();
     renderButton();
 }
 
@@ -384,10 +377,21 @@ function renderActive() {
     const el = document.getElementById('activeSlot');
     if (state.active) {
         const desc = describeTask(state.active);
-        el.innerHTML = `<div class="active-task">
-            <span class="info">${desc}</span>
-            <span class="status-badge">Running</span>
-        </div>`;
+        const st = state.active.status;
+        if (st === 'active') {
+            el.innerHTML = `<div class="active-task">
+                <span class="info">${desc}</span>
+                <span class="status-badge">Running</span>
+            </div>`;
+        } else {
+            // cancelled or error — show with dismiss button
+            const label = st === 'error' ? 'Error' : 'Cancelled';
+            el.innerHTML = `<div class="active-task" style="border-color: var(--primary);">
+                <span class="info">${desc}</span>
+                <span class="status-badge" style="background: rgba(233,69,96,0.2); color: var(--primary);">${label}</span>
+                <button class="remove-btn" onclick="removeFromQueue('${state.active.id}')">✕</button>
+            </div>`;
+        }
     } else {
         el.innerHTML = '<div class="active-empty">No active task</div>';
     }
@@ -409,36 +413,17 @@ function renderPending() {
     }).join('');
 }
 
-function renderCancelled() {
-    const section = document.getElementById('cancelledSection');
-    const el = document.getElementById('cancelledList');
-    if (!state.cancelled || !state.cancelled.length) {
-        section.style.display = 'none';
-        return;
-    }
-    section.style.display = '';
-    el.innerHTML = state.cancelled.map(task => {
-        const desc = describeTask(task);
-        const label = task.status === 'error' ? 'Error' : 'Cancelled';
-        const cls = task.status === 'error' ? 'error' : 'cancelled';
-        return `<li class="queue-item">
-            <span class="info">${desc}</span>
-            <span class="status-badge ${cls}">${label}</span>
-            <button class="remove-btn" onclick="removeFromQueue('${task.id}')">🗑</button>
-        </li>`;
-    }).join('');
-}
-
 function renderButton() {
     const btn = document.getElementById('btnControl');
-    if (state.active) {
+    if (state.active && state.active.status === 'active') {
         btn.className = 'btn-control cancel';
         btn.textContent = '✕ Cancel';
         btn.disabled = false;
-    } else if (state.pending && state.pending.length > 0) {
+    } else if ((state.pending && state.pending.length > 0) || (state.active && state.active.status !== 'active')) {
+        // Has pending work, or cancelled task to clear
         btn.className = 'btn-control start';
         btn.textContent = '▶ Start';
-        btn.disabled = false;
+        btn.disabled = !(state.pending && state.pending.length > 0);
     } else {
         btn.className = 'btn-control start';
         btn.textContent = '▶ Start';

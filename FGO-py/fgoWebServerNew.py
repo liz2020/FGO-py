@@ -13,7 +13,6 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 import fgoDevice
-import fgoKernel
 from fgoLogging import getLogger
 from fgoTaskQueue import Task, task_queue, task_worker
 from fgoQuestCatalog import get_catalog
@@ -152,7 +151,8 @@ async def get_quests(lang: str = "zh"):
 async def screenshot():
     if not fgoDevice.device.available:
         raise HTTPException(503, "Device not available")
-    img = fgoKernel.Detect().im
+    # Use raw screenshot — bypass Detect() which calls schedule.sleep/checkStop
+    img = fgoDevice.device.screenshot()
     _, buf = cv2.imencode('.jpg', img, [cv2.IMWRITE_JPEG_QUALITY, 80])
     return {"image": base64.b64encode(buf.tobytes()).decode()}
 

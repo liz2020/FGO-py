@@ -51,8 +51,7 @@ class TaskQueue:
     def __init__(self):
         self._lock = threading.Lock()
         self._tasks: deque[Task] = deque()
-        self._cancelled: list[Task] = []
-        self._current: Task | None = None
+        self._current: Task | None = None  # stays set even after cancel (shows in active slot)
         self._running = False  # True = auto-advancing through queue
         self._has_work = threading.Event()
         self._subscribers: list[Callable] = []
@@ -71,15 +70,15 @@ class TaskQueue:
         return task
 
     def remove(self, task_id: str) -> bool:
-        """Remove a pending task or a cancelled task."""
+        """Remove a pending task or clear the cancelled active task."""
         with self._lock:
+            # Clear cancelled/error task from active slot
+            if self._current and self._current.id == task_id and self._current.status in ("cancelled", "error"):
+                self._current = None
+                return True
             for i, t in enumerate(self._tasks):
                 if t.id == task_id:
                     del self._tasks[i]
-                    return True
-            for i, t in enumerate(self._cancelled):
-                if t.id == task_id:
-                    del self._cancelled[i]
                     return True
         return False
 
@@ -87,22 +86,20 @@ class TaskQueue:
         with self._lock:
             return [t.to_dict() for t in self._tasks]
 
-    def list_cancelled(self) -> list[dict]:
-        with self._lock:
-            return [t.to_dict() for t in self._cancelled]
-
     def get_state(self) -> dict:
         """Full state snapshot for UI."""
         with self._lock:
             return {
                 "active": self._current.to_dict() if self._current else None,
                 "pending": [t.to_dict() for t in self._tasks],
-                "cancelled": [t.to_dict() for t in self._cancelled],
                 "running": self._running,
             }
 
     def start(self):
         """Start queue: dequeue top item and execute. Auto-advances."""
+        # Clear any cancelled/error task from active slot
+        if self._current and self._current.status in ("cancelled", "error"):
+            self._current = None
         self._running = True
         schedule.reset()
         self._has_work.set()
@@ -160,25 +157,25 @@ class TaskWorker(threading.Thread):
             try:
                 schedule.reset()
                 result = self._execute(task)
-                # Success — task disappears (no state kept)
+                # Success — task disappears
                 task.status = "done"
                 task.finished_at = time.time()
                 task.result = result or {}
+                self.queue._current = None
                 logger.info(f"Task {task.id} completed successfully")
             except ScriptStop as e:
+                # Cancelled — stays in active slot for UI to show
                 task.status = "cancelled"
                 task.result = {"error": str(e)}
                 task.finished_at = time.time()
-                self.queue._cancelled.append(task)
                 logger.info(f"Task {task.id} cancelled: {e}")
             except Exception as e:
+                # Error — stays in active slot
                 task.status = "error"
                 task.result = {"error": repr(e)}
                 task.finished_at = time.time()
-                self.queue._cancelled.append(task)
                 logger.exception(f"Task {task.id} failed")
             finally:
-                self.queue._current = None
                 self.queue._broadcast({
                     "event": "task_finished",
                     "task": task.to_dict(),
