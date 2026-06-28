@@ -2,7 +2,10 @@ import argparse,os,sys
 from fgoConst import VERSION
 
 os.chdir(os.path.dirname(os.path.abspath(__file__)))
-with open("../.git/HEAD")as f:head=f.read().strip()
+try:
+    with open("../.git/HEAD")as f:head=f.read().strip()
+except (FileNotFoundError, OSError):
+    head=''
 
 parser=argparse.ArgumentParser(description=f'FGO-py {VERSION}')
 parser.add_argument('entrypoint',help='Program entry point (default: %(default)s)',type=str.lower,choices=['cli','web'],default='web',nargs='?')
