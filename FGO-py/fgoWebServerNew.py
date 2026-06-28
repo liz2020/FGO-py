@@ -15,7 +15,6 @@ from pydantic import BaseModel
 import fgoDevice
 import fgoKernel
 from fgoLogging import getLogger
-from fgoSchedule import schedule
 from fgoTaskQueue import Task, task_queue, task_worker
 from fgoQuestCatalog import get_catalog
 
@@ -107,7 +106,7 @@ async def root():
 
 @app.get("/api/queue")
 async def get_queue():
-    return {"queue": task_queue.list_all(), "running": task_queue.is_running}
+    return task_queue.get_state()
 
 
 @app.post("/api/queue")
@@ -116,7 +115,8 @@ async def add_task(req: AddTaskRequest):
         raise HTTPException(400, f"Unknown task type: {req.type}")
     task = Task(type=req.type, params=req.params)
     task_queue.add(task)
-    await ws_manager.broadcast({"event": "queue_updated", "queue": task_queue.list_all()})
+    state = task_queue.get_state()
+    await ws_manager.broadcast({"event": "state_updated", "state": state})
     return {"id": task.id, "task": task.to_dict()}
 
 
@@ -124,29 +124,22 @@ async def add_task(req: AddTaskRequest):
 async def remove_task(task_id: str):
     if not task_queue.remove(task_id):
         raise HTTPException(404, "Task not found in queue")
-    await ws_manager.broadcast({"event": "queue_updated", "queue": task_queue.list_all()})
+    state = task_queue.get_state()
+    await ws_manager.broadcast({"event": "state_updated", "state": state})
     return {"ok": True}
 
 
 @app.post("/api/control/start")
 async def control_start():
-    task_queue._running = True
-    schedule.reset()
-    task_queue._has_work.set()
-    await ws_manager.broadcast({"event": "queue_started"})
-    return {"ok": True, "running": True}
-
-
-@app.post("/api/control/pause")
-async def control_pause():
-    schedule.pause()
-    await ws_manager.broadcast({"event": "queue_paused"})
+    task_queue.start()
+    state = task_queue.get_state()
+    await ws_manager.broadcast({"event": "state_updated", "state": state})
     return {"ok": True}
 
 
-@app.post("/api/control/stop")
-async def control_stop():
-    task_queue.stop_current()
+@app.post("/api/control/cancel")
+async def control_cancel():
+    task_queue.cancel()
     return {"ok": True}
 
 
@@ -172,9 +165,8 @@ async def ws_status(websocket: WebSocket):
     try:
         # Send current state on connect
         await websocket.send_json({
-            "event": "connected",
-            "queue": task_queue.list_all(),
-            "running": task_queue.is_running,
+            "event": "state_updated",
+            "state": task_queue.get_state(),
         })
         # Keep alive — client can send pings
         while True:

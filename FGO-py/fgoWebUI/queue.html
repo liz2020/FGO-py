@@ -25,6 +25,34 @@
             padding: 12px;
         }
 
+        /* Header */
+        .header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 12px;
+        }
+        .back-link {
+            color: var(--text-dim);
+            text-decoration: none;
+            font-size: 0.85rem;
+        }
+        .back-link:hover { color: var(--text); }
+        .connection {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 0.75rem;
+            color: var(--text-dim);
+        }
+        .connection .dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: var(--primary);
+        }
+        .connection.connected .dot { background: var(--success); }
+
         /* Screenshot */
         .screenshot-container {
             width: 100%;
@@ -32,7 +60,6 @@
             background: #000;
             border-radius: var(--radius);
             overflow: hidden;
-            margin-bottom: 12px;
             position: relative;
         }
         .screenshot-container img {
@@ -48,42 +75,83 @@
             color: var(--text-dim);
             font-size: 0.9rem;
         }
+        .screenshot-controls {
+            display: flex;
+            justify-content: flex-end;
+            margin-top: 6px;
+            margin-bottom: 12px;
+        }
+        .btn-live {
+            padding: 4px 12px;
+            border-radius: 6px;
+            font-size: 0.8rem;
+            font-weight: 600;
+            cursor: pointer;
+            border: 1px solid var(--text-dim);
+            background: transparent;
+            color: var(--text-dim);
+        }
+        .btn-live.active {
+            border-color: var(--success);
+            color: var(--success);
+            background: rgba(78, 204, 163, 0.1);
+        }
 
-        /* Controls */
-        .controls {
+        /* Active Task Box */
+        .active-box {
             background: var(--surface);
             border-radius: var(--radius);
             padding: 12px;
             margin-bottom: 12px;
         }
-        .controls .status {
-            font-size: 0.85rem;
+        .active-box h3 {
+            font-size: 0.8rem;
             color: var(--text-dim);
             margin-bottom: 8px;
-            min-height: 1.2em;
         }
-        .controls .status.active { color: var(--success); }
-        .btn-row {
+        .active-task {
             display: flex;
-            gap: 8px;
+            align-items: center;
+            justify-content: space-between;
+            background: var(--card);
+            border-radius: 8px;
+            padding: 10px 12px;
+            margin-bottom: 10px;
+            border: 1px solid var(--success);
         }
-        .btn {
+        .active-task .info {
             flex: 1;
-            padding: 10px 0;
+            font-size: 0.9rem;
+        }
+        .active-task .status-badge {
+            font-size: 0.75rem;
+            padding: 2px 8px;
+            border-radius: 4px;
+            background: rgba(78, 204, 163, 0.2);
+            color: var(--success);
+        }
+        .active-empty {
+            color: var(--text-dim);
+            font-size: 0.85rem;
+            text-align: center;
+            padding: 12px 0;
+        }
+        .btn-control {
+            width: 100%;
+            padding: 12px 0;
             border: none;
             border-radius: 8px;
-            font-size: 0.9rem;
+            font-size: 0.95rem;
             font-weight: 600;
             cursor: pointer;
             transition: opacity 0.2s;
         }
-        .btn:active { opacity: 0.7; }
-        .btn:disabled { opacity: 0.4; cursor: not-allowed; }
-        .btn-start { background: var(--success); color: #000; }
-        .btn-pause { background: var(--warning); color: #000; }
-        .btn-stop { background: var(--primary); color: #fff; }
+        .btn-control:active { opacity: 0.7; }
+        .btn-control:disabled { opacity: 0.4; cursor: not-allowed; }
+        .btn-control.start { background: var(--success); color: #000; }
+        .btn-control.cancel { background: var(--primary); color: #fff; }
 
-        /* Quest Selector */
+        /* Sections */
         .section {
             background: var(--surface);
             border-radius: var(--radius);
@@ -91,10 +159,50 @@
             margin-bottom: 12px;
         }
         .section h3 {
-            font-size: 0.9rem;
+            font-size: 0.8rem;
             margin-bottom: 10px;
             color: var(--text-dim);
         }
+
+        /* Queue List */
+        .queue-list { list-style: none; }
+        .queue-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            background: var(--card);
+            border-radius: 8px;
+            padding: 10px 12px;
+            margin-bottom: 6px;
+            font-size: 0.85rem;
+        }
+        .queue-item .info { flex: 1; }
+        .queue-item .status-badge {
+            font-size: 0.75rem;
+            padding: 2px 8px;
+            border-radius: 4px;
+            margin-left: 8px;
+            white-space: nowrap;
+        }
+        .queue-item .status-badge.pending { background: rgba(160, 160, 176, 0.2); color: var(--text-dim); }
+        .queue-item .status-badge.cancelled { background: rgba(233, 69, 96, 0.2); color: var(--primary); }
+        .queue-item .status-badge.error { background: rgba(233, 69, 96, 0.2); color: var(--primary); }
+        .queue-item .remove-btn {
+            background: none;
+            border: none;
+            color: var(--primary);
+            font-size: 1.1rem;
+            cursor: pointer;
+            padding: 4px 8px;
+        }
+        .queue-empty {
+            color: var(--text-dim);
+            font-size: 0.85rem;
+            text-align: center;
+            padding: 12px 0;
+        }
+
+        /* Quest Selector */
         .form-row {
             display: flex;
             gap: 8px;
@@ -128,97 +236,6 @@
             cursor: pointer;
         }
         .btn-add:active { opacity: 0.7; }
-
-        /* Queue */
-        .queue-list {
-            list-style: none;
-        }
-        .queue-item {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            background: var(--card);
-            border-radius: 8px;
-            padding: 10px 12px;
-            margin-bottom: 6px;
-            font-size: 0.85rem;
-        }
-        .queue-item .info { flex: 1; }
-        .queue-item .status-badge {
-            font-size: 0.75rem;
-            padding: 2px 8px;
-            border-radius: 4px;
-            margin-left: 8px;
-            white-space: nowrap;
-        }
-        .queue-item .status-badge.active { background: rgba(78, 204, 163, 0.2); color: var(--success); }
-        .queue-item .status-badge.pending { background: rgba(160, 160, 176, 0.2); color: var(--text-dim); }
-        .queue-item .status-badge.error { background: rgba(233, 69, 96, 0.2); color: var(--primary); }
-        .queue-item .remove-btn {
-            background: none;
-            border: none;
-            color: var(--primary);
-            font-size: 1.1rem;
-            cursor: pointer;
-            padding: 4px 8px;
-        }
-        .queue-empty {
-            color: var(--text-dim);
-            font-size: 0.85rem;
-            text-align: center;
-            padding: 16px 0;
-        }
-
-        /* Connection badge */
-        .header {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            margin-bottom: 12px;
-        }
-        .back-link {
-            color: var(--text-dim);
-            text-decoration: none;
-            font-size: 0.85rem;
-        }
-        .back-link:hover { color: var(--text); }
-        .connection {
-            display: flex;
-            align-items: center;
-            gap: 6px;
-            font-size: 0.75rem;
-            color: var(--text-dim);
-        }
-        .connection .dot {
-            width: 8px;
-            height: 8px;
-            border-radius: 50%;
-            background: var(--primary);
-        }
-        .connection.connected .dot { background: var(--success); }
-
-        /* Live toggle */
-        .screenshot-controls {
-            display: flex;
-            justify-content: flex-end;
-            margin-top: 6px;
-            margin-bottom: 12px;
-        }
-        .btn-live {
-            padding: 4px 12px;
-            border-radius: 6px;
-            font-size: 0.8rem;
-            font-weight: 600;
-            cursor: pointer;
-            border: 1px solid var(--text-dim);
-            background: transparent;
-            color: var(--text-dim);
-        }
-        .btn-live.active {
-            border-color: var(--success);
-            color: var(--success);
-            background: rgba(78, 204, 163, 0.1);
-        }
     </style>
 </head>
 <body>
@@ -238,21 +255,27 @@
         <button class="btn-live" id="btnLive" onclick="toggleLive()">● Live</button>
     </div>
 
-    <!-- Controls -->
-    <div class="controls">
-        <div class="status" id="statusText">Idle</div>
-        <div class="btn-row">
-            <button class="btn btn-start" id="btnStart" onclick="controlStart()">▶ Start</button>
-            <button class="btn btn-pause" id="btnPause" onclick="controlPause()">⏸ Pause</button>
+    <!-- Active Task Box -->
+    <div class="active-box">
+        <h3>Now Running</h3>
+        <div id="activeSlot">
+            <div class="active-empty">No active task</div>
         </div>
+        <button class="btn-control start" id="btnControl" onclick="controlToggle()">▶ Start</button>
     </div>
 
-    <!-- Task Queue -->
+    <!-- Pending Queue -->
     <div class="section">
         <h3>Queue</h3>
         <ul class="queue-list" id="queueList">
             <li class="queue-empty">No tasks in queue</li>
         </ul>
+    </div>
+
+    <!-- Cancelled Tasks -->
+    <div class="section" id="cancelledSection" style="display:none;">
+        <h3>Cancelled</h3>
+        <ul class="queue-list" id="cancelledList"></ul>
     </div>
 
     <!-- Quest Selector -->
@@ -279,16 +302,15 @@
 
 <script>
 const API = (() => {
-    // Detect proxy base path (e.g. /scripts/fgo/0)
     const match = location.pathname.match(/^(\/scripts\/[^/]+\/\d+)\//);
     return match ? match[1] : '';
 })();
 let ws = null;
 let catalog = null;
-let queueData = [];
+let state = { active: null, pending: [], cancelled: [], running: false };
 let liveInterval = null;
 
-// Set back link to emu manager
+// Back link visibility
 (function() {
     const match = location.pathname.match(/^\/scripts\//);
     if (match) {
@@ -301,7 +323,6 @@ let liveInterval = null;
 // --- WebSocket ---
 function getWsUrl() {
     const proto = location.protocol === 'https:' ? 'wss' : 'ws';
-    // When accessed through proxy (/scripts/fgo/0/), use proxy WS path
     const path = location.pathname;
     const match = path.match(/^(\/scripts\/[^/]+\/\d+)\//);
     if (match) {
@@ -329,41 +350,104 @@ function connectWS() {
 
 function handleEvent(msg) {
     switch (msg.event) {
-        case 'connected':
-        case 'queue_updated':
-            queueData = msg.queue || [];
-            renderQueue();
+        case 'state_updated':
+        case 'task_finished':
+            if (msg.state) {
+                state = msg.state;
+                render();
+            }
             break;
         case 'task_started':
-            updateStatus(`Running: ${describeTask(msg.task)}`, true);
+            if (msg.task) {
+                state.active = msg.task;
+                state.running = true;
+                render();
+            }
             break;
-        case 'task_progress':
-            // Update status with elapsed time
-            const elapsed = Math.round(msg.elapsed || 0);
-            updateStatus(`Running... (${elapsed}s)`, true);
-            break;
-        case 'task_completed':
-            const st = msg.task.status === 'done' ? '✓' : '✗';
-            updateStatus(`${st} ${describeTask(msg.task)} — ${msg.task.status}`, false);
-            fetchQueue();
-            break;
-        case 'queue_started':
-            updateStatus('Queue started', true);
-            break;
-        case 'queue_paused':
-            updateStatus('Paused', false);
+        case 'queue_idle':
+            state.active = null;
+            state.running = false;
+            render();
             break;
     }
 }
 
-function updateStatus(text, active) {
-    const el = document.getElementById('statusText');
-    el.textContent = text;
-    el.className = active ? 'status active' : 'status';
+// --- Rendering ---
+function render() {
+    renderActive();
+    renderPending();
+    renderCancelled();
+    renderButton();
+}
+
+function renderActive() {
+    const el = document.getElementById('activeSlot');
+    if (state.active) {
+        const desc = describeTask(state.active);
+        el.innerHTML = `<div class="active-task">
+            <span class="info">${desc}</span>
+            <span class="status-badge">Running</span>
+        </div>`;
+    } else {
+        el.innerHTML = '<div class="active-empty">No active task</div>';
+    }
+}
+
+function renderPending() {
+    const el = document.getElementById('queueList');
+    if (!state.pending || !state.pending.length) {
+        el.innerHTML = '<li class="queue-empty">No tasks in queue</li>';
+        return;
+    }
+    el.innerHTML = state.pending.map(task => {
+        const desc = describeTask(task);
+        return `<li class="queue-item">
+            <span class="info">${desc}</span>
+            <span class="status-badge pending">Pending</span>
+            <button class="remove-btn" onclick="removeFromQueue('${task.id}')">🗑</button>
+        </li>`;
+    }).join('');
+}
+
+function renderCancelled() {
+    const section = document.getElementById('cancelledSection');
+    const el = document.getElementById('cancelledList');
+    if (!state.cancelled || !state.cancelled.length) {
+        section.style.display = 'none';
+        return;
+    }
+    section.style.display = '';
+    el.innerHTML = state.cancelled.map(task => {
+        const desc = describeTask(task);
+        const label = task.status === 'error' ? 'Error' : 'Cancelled';
+        const cls = task.status === 'error' ? 'error' : 'cancelled';
+        return `<li class="queue-item">
+            <span class="info">${desc}</span>
+            <span class="status-badge ${cls}">${label}</span>
+            <button class="remove-btn" onclick="removeFromQueue('${task.id}')">🗑</button>
+        </li>`;
+    }).join('');
+}
+
+function renderButton() {
+    const btn = document.getElementById('btnControl');
+    if (state.active) {
+        btn.className = 'btn-control cancel';
+        btn.textContent = '✕ Cancel';
+        btn.disabled = false;
+    } else if (state.pending && state.pending.length > 0) {
+        btn.className = 'btn-control start';
+        btn.textContent = '▶ Start';
+        btn.disabled = false;
+    } else {
+        btn.className = 'btn-control start';
+        btn.textContent = '▶ Start';
+        btn.disabled = true;
+    }
 }
 
 function describeTask(task) {
-    if (task.type === 'operation' && task.params.quests) {
+    if (task.type === 'operation' && task.params && task.params.quests) {
         const q = task.params.quests[0];
         const name = findQuestName(q.quest) || q.quest.join('-');
         const count = task.params.quests.reduce((s, x) => s + x.count, 0);
@@ -387,11 +471,10 @@ function findQuestName(tuple) {
 }
 
 // --- API calls ---
-async function fetchQueue() {
+async function fetchState() {
     const res = await fetch(`${API}/api/queue`);
-    const data = await res.json();
-    queueData = data.queue || [];
-    renderQueue();
+    state = await res.json();
+    render();
 }
 
 async function fetchCatalog() {
@@ -400,21 +483,13 @@ async function fetchCatalog() {
     populateParts();
 }
 
-async function controlStart() {
-    await fetch(`${API}/api/control/start`, { method: 'POST' });
-    // Small delay for worker to pick up task
-    setTimeout(fetchQueue, 300);
-    startPolling();
-}
-
-async function controlPause() {
-    await fetch(`${API}/api/control/pause`, { method: 'POST' });
-    setTimeout(fetchQueue, 300);
-    stopPolling();
-}
-
-async function controlStop() {
-    await fetch(`${API}/api/control/stop`, { method: 'POST' });
+async function controlToggle() {
+    if (state.active) {
+        await fetch(`${API}/api/control/cancel`, { method: 'POST' });
+    } else {
+        await fetch(`${API}/api/control/start`, { method: 'POST' });
+    }
+    setTimeout(fetchState, 300);
 }
 
 async function addToQueue() {
@@ -423,7 +498,7 @@ async function addToQueue() {
     const quest = JSON.parse(sel.value);
     const count = parseInt(document.getElementById('inputCount').value) || 1;
     try {
-        const res = await fetch(`${API}/api/queue`, {
+        await fetch(`${API}/api/queue`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -435,9 +510,7 @@ async function addToQueue() {
                 }
             })
         });
-        if (!res.ok) console.error('Add failed:', await res.text());
-        // Always refresh queue (fallback if WebSocket not connected)
-        await fetchQueue();
+        await fetchState();
     } catch (e) {
         console.error('Add to queue error:', e);
     }
@@ -445,7 +518,7 @@ async function addToQueue() {
 
 async function removeFromQueue(taskId) {
     await fetch(`${API}/api/queue/${taskId}`, { method: 'DELETE' });
-    await fetchQueue();
+    await fetchState();
 }
 
 async function takeScreenshot() {
@@ -489,38 +562,6 @@ function onChapterChange() {
     ).join('');
 }
 
-// --- Queue rendering ---
-function renderQueue() {
-    const el = document.getElementById('queueList');
-    if (!queueData.length) {
-        el.innerHTML = '<li class="queue-empty">No tasks in queue</li>';
-        return;
-    }
-    el.innerHTML = queueData.map(task => {
-        const desc = describeTask(task);
-        const statusLabel = {active: 'Active', pending: 'Pending', error: 'Error'}[task.status] || task.status;
-        const canRemove = task.status !== 'active';
-        return `<li class="queue-item">
-            <span class="info">${desc}</span>
-            <span class="status-badge ${task.status}">${statusLabel}</span>
-            ${canRemove ? `<button class="remove-btn" onclick="removeFromQueue('${task.id}')">🗑</button>` : ''}
-        </li>`;
-    }).join('');
-}
-
-// --- Polling (fallback when WebSocket not connected) ---
-let pollInterval = null;
-function startPolling() {
-    if (pollInterval) return;
-    pollInterval = setInterval(fetchQueue, 3000);
-}
-function stopPolling() {
-    if (pollInterval) {
-        clearInterval(pollInterval);
-        pollInterval = null;
-    }
-}
-
 // --- Live screenshot toggle ---
 function toggleLive() {
     const btn = document.getElementById('btnLive');
@@ -538,7 +579,7 @@ function toggleLive() {
 // --- Init ---
 connectWS();
 fetchCatalog();
-fetchQueue();
+fetchState();
 </script>
 </body>
 </html>
