@@ -39,6 +39,35 @@ def get_backend() -> LDPlayerBackend:
     return backend
 
 
+def _get_tailscale_info() -> dict | None:
+    """Get Tailscale hostname and IP via `tailscale status --json`."""
+    import subprocess as _sp
+    try:
+        result = _sp.run(
+            ["tailscale", "status", "--json"],
+            capture_output=True, text=True, timeout=5,
+        )
+        if result.returncode != 0:
+            return None
+        import json
+        data = json.loads(result.stdout)
+        self_key = data.get("Self", {})
+        hostname = self_key.get("HostName", "")
+        dns_name = self_key.get("DNSName", "").rstrip(".")
+        ts_ips = self_key.get("TailscaleIPs", [])
+        return {
+            "hostname": hostname,
+            "dns_name": dns_name,
+            "ips": ts_ips,
+        }
+    except Exception:
+        return None
+
+
+# Farming progress store: {(script_name, instance_index): {current, total, status, ...}}
+_farming_progress: dict[tuple[str, int], dict] = {}
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Initialize backend on startup."""
@@ -248,12 +277,36 @@ def create_app() -> FastAPI:
         success = registry.stop(name, instance_index)
         return {"success": success}
 
+    # --- Farming Progress ---
+
+    @app.post("/api/scripts/{name}/progress")
+    async def report_progress(name: str, request: Request):
+        """Called by automation scripts to report farming progress."""
+        body = await request.json()
+        instance_index = body.get("instance_index", 0)
+        _farming_progress[(name, instance_index)] = {
+            "current": body.get("current", 0),
+            "total": body.get("total", 0),
+            "status": body.get("status", "running"),
+            "detail": body.get("detail", ""),
+        }
+        return {"ok": True}
+
+    @app.get("/api/scripts/{name}/progress/{instance_index}")
+    async def get_progress(name: str, instance_index: int):
+        """Get farming progress for a script on a specific instance."""
+        progress = _farming_progress.get((name, instance_index))
+        if progress is None:
+            return {"current": 0, "total": 0, "status": "idle", "detail": ""}
+        return progress
+
     # --- System ---
 
     @app.get("/api/status")
     async def system_status():
         b = get_backend()
         info = b.detect()
+        tailscale = _get_tailscale_info()
         return {
             "service": "emulator-manager",
             "version": "1.0.0",
@@ -263,6 +316,7 @@ def create_app() -> FastAPI:
                 "brand": info.brand if info else None,
                 "install_dir": str(info.install_dir) if info else None,
             },
+            "tailscale": tailscale,
         }
 
     @app.get("/api/emulators")

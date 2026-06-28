@@ -251,6 +251,7 @@
     <div class="card">
         <h2>截图</h2>
         <div class="btn-row">
+            <button class="btn btn-secondary" id="live-btn" onclick="toggleLive()">▶ 实时预览</button>
             <button class="btn btn-secondary" onclick="takeScreenshot()">📸 检查截图</button>
             <button class="btn btn-secondary" onclick="doBench()">⚡ 性能测试</button>
         </div>
@@ -383,6 +384,25 @@
         if (!value || isNaN(value)) return;
         await post('api/stopLater', { value });
         toast(`将在 ${value} 场后终止`);
+    }
+
+    let _liveTimer = null;
+
+    function toggleLive() {
+        const btn = document.getElementById('live-btn');
+        if (_liveTimer) {
+            clearInterval(_liveTimer);
+            _liveTimer = null;
+            btn.textContent = '▶ 实时预览';
+            btn.classList.remove('btn-success');
+            btn.classList.add('btn-secondary');
+        } else {
+            _liveTimer = setInterval(takeScreenshot, 333);  // ~3 FPS
+            btn.textContent = '⏹ 停止预览';
+            btn.classList.remove('btn-secondary');
+            btn.classList.add('btn-success');
+            takeScreenshot();
+        }
     }
 
     async function takeScreenshot() {

@@ -45,25 +45,40 @@ class LDOpenGL:
         self._instance = None
 
     def _load_dll(self):
-        """Load ldopengl64.dll and get CreateScreenShotInstance."""
+        """Load ldopengl64.dll (or ldopengl.dll for 32-bit) and get CreateScreenShotInstance."""
         if self._dll is not None:
             return True
 
-        dll_path = self.install_dir / "ldopengl64.dll"
-        if not dll_path.exists():
-            logger.error("ldopengl64.dll not found at %s", dll_path)
+        # Prefer 64-bit DLL; fall back to 32-bit if running 32-bit Python
+        import struct
+        is_64bit = struct.calcsize("P") == 8
+        candidates = (
+            ["ldopengl64.dll", "ldopengl.dll"]
+            if is_64bit
+            else ["ldopengl.dll", "ldopengl64.dll"]
+        )
+
+        dll_path = None
+        for name in candidates:
+            p = self.install_dir / name
+            if p.exists():
+                dll_path = p
+                break
+
+        if dll_path is None:
+            logger.error("No ldopengl DLL found in %s", self.install_dir)
             return False
 
         try:
             self._dll = ctypes.CDLL(str(dll_path))
-            # CreateScreenShotInstance(unsigned int playeridx, unsigned int playerpid)
-            # Returns IScreenShotClass* (a C++ object pointer)
             self._create_func = self._dll.CreateScreenShotInstance
             self._create_func.argtypes = [ctypes.c_uint, ctypes.c_uint]
             self._create_func.restype = ctypes.c_void_p
+            self._ptr_size = 8 if is_64bit else 4
+            logger.info("Loaded %s", dll_path.name)
             return True
         except Exception as e:
-            logger.error("Failed to load ldopengl64.dll: %s", e)
+            logger.error("Failed to load %s: %s", dll_path.name, e)
             self._dll = None
             return False
 
@@ -108,19 +123,19 @@ class LDOpenGL:
             logger.error("Width/height not set — cannot interpret pixel buffer")
             return None
 
-        # IScreenShotClass vtable layout (MSVC x64):
+        # IScreenShotClass vtable layout (MSVC):
         #   [0] destructor (or RTTI)
         #   [1] cap() -> void*
         #   [2] release() -> void
-        # Read the vtable pointer (first 8 bytes of the object)
+        # Read the vtable pointer (first ptr_size bytes of the object)
         vtable_ptr = ctypes.c_void_p.from_address(instance_ptr).value
         if not vtable_ptr:
             logger.error("vtable pointer is null")
             return None
 
-        # cap() is at vtable[1] (skip destructor at [0])
-        # Each entry is 8 bytes (64-bit pointer)
-        cap_func_ptr = ctypes.c_void_p.from_address(vtable_ptr + 8).value
+        # cap() is at vtable[1] — pointer size depends on architecture
+        ps = getattr(self, '_ptr_size', 8)
+        cap_func_ptr = ctypes.c_void_p.from_address(vtable_ptr + ps).value
         if not cap_func_ptr:
             logger.error("cap function pointer is null")
             return None
@@ -150,7 +165,8 @@ class LDOpenGL:
         try:
             # release() is at vtable[2]
             vtable_ptr = ctypes.c_void_p.from_address(self._instance).value
-            release_func_ptr = ctypes.c_void_p.from_address(vtable_ptr + 16).value
+            ps = getattr(self, '_ptr_size', 8)
+            release_func_ptr = ctypes.c_void_p.from_address(vtable_ptr + 2 * ps).value
             if release_func_ptr:
                 release_func_type = ctypes.CFUNCTYPE(None, ctypes.c_void_p)
                 release_func = release_func_type(release_func_ptr)

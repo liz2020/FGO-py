@@ -1,4 +1,4 @@
-import base64,cv2,json,time
+import base64,cv2,json,time,threading
 from flask import Flask,redirect,render_template,request,url_for
 import fgoDevice
 import fgoKernel
@@ -8,6 +8,33 @@ logger=getLogger('Web')
 
 teamup=IniParser('fgoTeamup.ini')
 app=Flask(__name__,static_folder='fgoWebUI',template_folder='fgoWebUI')
+
+# Progress reporting to emu manager
+_emu_manager_url = None
+_instance_index = 0
+
+def _report_progress(current, total, status="running", detail=""):
+    """Report farming progress to the emu manager (fire-and-forget)."""
+    if not _emu_manager_url:
+        return
+    import urllib.request
+    try:
+        data = json.dumps({
+            "instance_index": _instance_index,
+            "current": current,
+            "total": total,
+            "status": status,
+            "detail": detail,
+        }).encode()
+        req = urllib.request.Request(
+            f"{_emu_manager_url}/api/scripts/fgo/progress",
+            data=data,
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        urllib.request.urlopen(req, timeout=2)
+    except Exception:
+        pass
 
 @app.route('/')
 def root():
@@ -45,11 +72,35 @@ def apply():
     fgoKernel.ClassicTurn.masterSkill=data['masterSkill']
     return ''
 
+def _run_with_progress(main_instance, apple_total):
+    """Run a Main instance while reporting progress to the emu manager."""
+    total = apple_total + 1  # appleTotal is extra runs from apples, +1 for the initial run
+    _report_progress(0, total, "running", "Starting...")
+
+    def monitor():
+        while not getattr(main_instance, '_done', False):
+            bc = getattr(main_instance, 'battleCount', 0)
+            _report_progress(bc, total, "running")
+            time.sleep(3)
+
+    t = threading.Thread(target=monitor, daemon=True)
+    t.start()
+    try:
+        main_instance()
+        bc = getattr(main_instance, 'battleCount', 0)
+        _report_progress(bc, total, "done", "Complete")
+    except Exception as e:
+        _report_progress(0, total, "error", str(e))
+        raise
+    finally:
+        main_instance._done = True
+
 @app.route('/api/run/main',methods=['POST'])
 def runMain():
     if not fgoDevice.device.available:
         return 'Device not available'
-    fgoKernel.Main(**{i:int(j)for i,j in request.form.items()})()
+    m = fgoKernel.Main(**{i:int(j)for i,j in request.form.items()})
+    _run_with_progress(m, int(request.form.get('appleTotal', 0)))
     return 'Done'
 
 @app.route('/api/run/battle',methods=['POST'])
@@ -63,7 +114,8 @@ def runBattle():
 def runClassic():
     if not fgoDevice.device.available:
         return 'Device not available'
-    fgoKernel.Main(**{i:int(j)for i,j in request.form.items()},battleClass=lambda:fgoKernel.Battle(fgoKernel.ClassicTurn))()
+    m = fgoKernel.Main(**{i:int(j)for i,j in request.form.items()},battleClass=lambda:fgoKernel.Battle(fgoKernel.ClassicTurn))
+    _run_with_progress(m, int(request.form.get('appleTotal', 0)))
     return 'Done'
 
 @app.route('/api/pause',methods=['POST'])
@@ -92,4 +144,15 @@ def bench():
 
 def main(config, port=15000):
     globals()['config']=config
+    # Set emu manager URL for progress reporting
+    global _emu_manager_url, _instance_index
+    _emu_manager_url = 'http://127.0.0.1:15100'
+    # Extract instance index from device name if available
+    try:
+        if hasattr(fgoDevice, 'device') and fgoDevice.device:
+            name = getattr(fgoDevice.device, 'name', '')
+            if 'ldplayer:' in name:
+                _instance_index = int(name.split(':')[1])
+    except Exception:
+        pass
     app.run(host='127.0.0.1', port=port)
