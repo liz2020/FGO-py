@@ -232,14 +232,7 @@
             const el = document.getElementById('emu-info');
             const dot = document.querySelector('#service-status .status-dot');
             if (status.emulator.detected) {
-                let info = `${status.emulator.name} — ${status.emulator.install_dir}`;
-                if (status.tailscale && status.tailscale.dns_name) {
-                    info += `\n🌐 ${status.tailscale.dns_name}:15100`;
-                } else if (status.tailscale && status.tailscale.ips && status.tailscale.ips.length) {
-                    info += `\n🌐 ${status.tailscale.ips[0]}:15100`;
-                }
-                el.textContent = info;
-                el.style.whiteSpace = 'pre-line';
+                el.textContent = `${status.emulator.name} — ${status.emulator.install_dir}`;
                 el.style.display = 'block';
                 dot.className = 'status-dot online';
             } else {

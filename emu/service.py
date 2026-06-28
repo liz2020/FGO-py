@@ -39,31 +39,6 @@ def get_backend() -> LDPlayerBackend:
     return backend
 
 
-def _get_tailscale_info() -> dict | None:
-    """Get Tailscale hostname and IP via `tailscale status --json`."""
-    import subprocess as _sp
-    try:
-        result = _sp.run(
-            ["tailscale", "status", "--json"],
-            capture_output=True, text=True, timeout=5,
-        )
-        if result.returncode != 0:
-            return None
-        import json
-        data = json.loads(result.stdout)
-        self_key = data.get("Self", {})
-        hostname = self_key.get("HostName", "")
-        dns_name = self_key.get("DNSName", "").rstrip(".")
-        ts_ips = self_key.get("TailscaleIPs", [])
-        return {
-            "hostname": hostname,
-            "dns_name": dns_name,
-            "ips": ts_ips,
-        }
-    except Exception:
-        return None
-
-
 # Farming progress store: {(script_name, instance_index): {current, total, status, ...}}
 _farming_progress: dict[tuple[str, int], dict] = {}
 
@@ -306,7 +281,6 @@ def create_app() -> FastAPI:
     async def system_status():
         b = get_backend()
         info = b.detect()
-        tailscale = _get_tailscale_info()
         return {
             "service": "emulator-manager",
             "version": "1.0.0",
@@ -316,7 +290,6 @@ def create_app() -> FastAPI:
                 "brand": info.brand if info else None,
                 "install_dir": str(info.install_dir) if info else None,
             },
-            "tailscale": tailscale,
         }
 
     @app.get("/api/emulators")
