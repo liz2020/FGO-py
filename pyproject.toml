@@ -1,0 +1,15 @@
+[project]
+name = "fgo-py"
+version = "21.0.2"
+description = "Full-automatic FGO Script"
+readme = "readme.md"
+requires-python = "==3.11.*"
+dependencies = [
+    "airtest",
+    "PySide6",
+    "tqdm",
+    "Flask",
+    "pponnxcr",
+    "pulp",
+    "matplotlib",
+]
