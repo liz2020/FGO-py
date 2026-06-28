@@ -1,0 +1,569 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>FGO-py</title>
+    <style>
+        :root {
+            --bg: #1a1a2e;
+            --surface: #16213e;
+            --card: #0f3460;
+            --primary: #e94560;
+            --success: #4ecca3;
+            --warning: #f0a500;
+            --text: #eaeaea;
+            --text-dim: #a0a0b0;
+            --radius: 12px;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            min-height: 100vh;
+            padding: 12px;
+        }
+
+        /* Header */
+        .header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 12px;
+        }
+        .back-link {
+            color: var(--text-dim);
+            text-decoration: none;
+            font-size: 0.85rem;
+        }
+        .back-link:hover { color: var(--text); }
+        .connection {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 0.75rem;
+            color: var(--text-dim);
+        }
+        .connection .dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: var(--primary);
+        }
+        .connection.connected .dot { background: var(--success); }
+
+        /* Screenshot */
+        .screenshot-container {
+            width: 100%;
+            aspect-ratio: 16/9;
+            background: #000;
+            border-radius: var(--radius);
+            overflow: hidden;
+            position: relative;
+        }
+        .screenshot-container img {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+        }
+        .screenshot-container .no-image {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 100%;
+            color: var(--text-dim);
+            font-size: 0.9rem;
+        }
+        .screenshot-controls {
+            display: flex;
+            justify-content: flex-end;
+            margin-top: 6px;
+            margin-bottom: 12px;
+        }
+        .btn-live {
+            padding: 4px 12px;
+            border-radius: 6px;
+            font-size: 0.8rem;
+            font-weight: 600;
+            cursor: pointer;
+            border: 1px solid var(--text-dim);
+            background: transparent;
+            color: var(--text-dim);
+        }
+        .btn-live.active {
+            border-color: var(--success);
+            color: var(--success);
+            background: rgba(78, 204, 163, 0.1);
+        }
+
+        /* Active Task Box */
+        .active-box {
+            background: var(--surface);
+            border-radius: var(--radius);
+            padding: 12px;
+            margin-bottom: 12px;
+        }
+        .active-box h3 {
+            font-size: 0.8rem;
+            color: var(--text-dim);
+            margin-bottom: 8px;
+        }
+        .active-task {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            background: var(--card);
+            border-radius: 8px;
+            padding: 10px 12px;
+            margin-bottom: 10px;
+            border: 1px solid var(--success);
+        }
+        .active-task .info {
+            flex: 1;
+            font-size: 0.9rem;
+        }
+        .active-task .status-badge {
+            font-size: 0.75rem;
+            padding: 2px 8px;
+            border-radius: 4px;
+            background: rgba(78, 204, 163, 0.2);
+            color: var(--success);
+        }
+        .active-empty {
+            color: var(--text-dim);
+            font-size: 0.85rem;
+            text-align: center;
+            padding: 12px 0;
+        }
+        .btn-control {
+            width: 100%;
+            padding: 12px 0;
+            border: none;
+            border-radius: 8px;
+            font-size: 0.95rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: opacity 0.2s;
+        }
+        .btn-control:active { opacity: 0.7; }
+        .btn-control:disabled { opacity: 0.4; cursor: not-allowed; }
+        .btn-control.start { background: var(--success); color: #000; }
+        .btn-control.cancel { background: var(--primary); color: #fff; }
+
+        /* Sections */
+        .section {
+            background: var(--surface);
+            border-radius: var(--radius);
+            padding: 12px;
+            margin-bottom: 12px;
+        }
+        .section h3 {
+            font-size: 0.8rem;
+            margin-bottom: 10px;
+            color: var(--text-dim);
+        }
+
+        /* Queue List */
+        .queue-list { list-style: none; }
+        .queue-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            background: var(--card);
+            border-radius: 8px;
+            padding: 10px 12px;
+            margin-bottom: 6px;
+            font-size: 0.85rem;
+        }
+        .queue-item .info { flex: 1; }
+        .queue-item .status-badge {
+            font-size: 0.75rem;
+            padding: 2px 8px;
+            border-radius: 4px;
+            margin-left: 8px;
+            white-space: nowrap;
+        }
+        .queue-item .status-badge.pending { background: rgba(160, 160, 176, 0.2); color: var(--text-dim); }
+        .queue-item .status-badge.cancelled { background: rgba(233, 69, 96, 0.2); color: var(--primary); }
+        .queue-item .status-badge.error { background: rgba(233, 69, 96, 0.2); color: var(--primary); }
+        .queue-item .remove-btn {
+            background: none;
+            border: none;
+            color: var(--primary);
+            font-size: 1.1rem;
+            cursor: pointer;
+            padding: 4px 8px;
+        }
+        .queue-empty {
+            color: var(--text-dim);
+            font-size: 0.85rem;
+            text-align: center;
+            padding: 12px 0;
+        }
+
+        /* Quest Selector */
+        .form-row {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 8px;
+            align-items: center;
+        }
+        .form-row label {
+            font-size: 0.8rem;
+            color: var(--text-dim);
+            min-width: 50px;
+        }
+        .form-row select, .form-row input {
+            flex: 1;
+            background: var(--card);
+            color: var(--text);
+            border: 1px solid #2a3a5e;
+            border-radius: 6px;
+            padding: 8px 10px;
+            font-size: 0.85rem;
+        }
+        .form-row input[type="number"] { max-width: 70px; }
+        .btn-add {
+            width: 100%;
+            padding: 10px;
+            background: var(--card);
+            color: var(--success);
+            border: 1px solid var(--success);
+            border-radius: 8px;
+            font-size: 0.9rem;
+            font-weight: 600;
+            cursor: pointer;
+        }
+        .btn-add:active { opacity: 0.7; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <a class="back-link" id="backLink" href="/">← Manager</a>
+        <div class="connection" id="connStatus">
+            <span class="dot"></span>
+            <span>Disconnected</span>
+        </div>
+    </div>
+
+    <!-- Game Screenshot -->
+    <div class="screenshot-container" id="screenshotBox" onclick="takeScreenshot()">
+        <div class="no-image">Tap to capture screenshot</div>
+    </div>
+    <div class="screenshot-controls">
+        <button class="btn-live" id="btnLive" onclick="toggleLive()">● Live</button>
+    </div>
+
+    <!-- Active Task Box -->
+    <div class="active-box">
+        <h3>Now Running</h3>
+        <div id="activeSlot">
+            <div class="active-empty">No active task</div>
+        </div>
+        <button class="btn-control start" id="btnControl" onclick="controlToggle()">▶ Start</button>
+    </div>
+
+    <!-- Pending Queue -->
+    <div class="section">
+        <h3>Queue</h3>
+        <ul class="queue-list" id="queueList">
+            <li class="queue-empty">No tasks in queue</li>
+        </ul>
+    </div>
+
+    <!-- Quest Selector -->
+    <div class="section">
+        <h3>Add Quest</h3>
+        <div class="form-row">
+            <label>Part</label>
+            <select id="selPart" onchange="onPartChange()"></select>
+        </div>
+        <div class="form-row">
+            <label>Chapter</label>
+            <select id="selChapter" onchange="onChapterChange()"></select>
+        </div>
+        <div class="form-row">
+            <label>Quest</label>
+            <select id="selQuest"></select>
+        </div>
+        <div class="form-row">
+            <label>Repeat</label>
+            <input type="number" id="inputCount" value="1" min="1" max="999">
+        </div>
+        <button class="btn-add" onclick="addToQueue()">+ Add to Queue</button>
+    </div>
+
+<script>
+const API = (() => {
+    const match = location.pathname.match(/^(\/scripts\/[^/]+\/\d+)\//);
+    return match ? match[1] : '';
+})();
+let ws = null;
+let catalog = null;
+let state = { active: null, pending: [], running: false };
+let liveInterval = null;
+
+// Back link visibility
+(function() {
+    const match = location.pathname.match(/^\/scripts\//);
+    if (match) {
+        document.getElementById('backLink').href = '/';
+    } else {
+        document.getElementById('backLink').style.display = 'none';
+    }
+})();
+
+// --- WebSocket ---
+function getWsUrl() {
+    const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+    const path = location.pathname;
+    const match = path.match(/^(\/scripts\/[^/]+\/\d+)\//);
+    if (match) {
+        return `${proto}://${location.host}${match[1]}/ws/status`;
+    }
+    return `${proto}://${location.host}/ws/status`;
+}
+
+function connectWS() {
+    ws = new WebSocket(getWsUrl());
+    ws.onopen = () => {
+        document.getElementById('connStatus').className = 'connection connected';
+        document.getElementById('connStatus').querySelector('span:last-child').textContent = 'Connected';
+    };
+    ws.onclose = () => {
+        document.getElementById('connStatus').className = 'connection';
+        document.getElementById('connStatus').querySelector('span:last-child').textContent = 'Disconnected';
+        setTimeout(connectWS, 3000);
+    };
+    ws.onmessage = (e) => {
+        const msg = JSON.parse(e.data);
+        handleEvent(msg);
+    };
+}
+
+function handleEvent(msg) {
+    switch (msg.event) {
+        case 'state_updated':
+        case 'task_finished':
+            if (msg.state) {
+                state = msg.state;
+                render();
+            }
+            break;
+        case 'task_started':
+            if (msg.task) {
+                state.active = msg.task;
+                state.running = true;
+                render();
+            }
+            break;
+        case 'queue_idle':
+            state.active = null;
+            state.running = false;
+            render();
+            break;
+    }
+}
+
+// --- Rendering ---
+function render() {
+    renderActive();
+    renderPending();
+    renderButton();
+}
+
+function renderActive() {
+    const el = document.getElementById('activeSlot');
+    if (state.active) {
+        const desc = describeTask(state.active);
+        const st = state.active.status;
+        if (st === 'active') {
+            el.innerHTML = `<div class="active-task">
+                <span class="info">${desc}</span>
+                <span class="status-badge">Running</span>
+            </div>`;
+        } else {
+            // cancelled or error — show status, Start will clear it
+            const label = st === 'error' ? 'Error' : 'Cancelled';
+            el.innerHTML = `<div class="active-task" style="border-color: var(--primary);">
+                <span class="info">${desc}</span>
+                <span class="status-badge" style="background: rgba(233,69,96,0.2); color: var(--primary);">${label}</span>
+            </div>`;
+        }
+    } else {
+        el.innerHTML = '<div class="active-empty">No active task</div>';
+    }
+}
+
+function renderPending() {
+    const el = document.getElementById('queueList');
+    if (!state.pending || !state.pending.length) {
+        el.innerHTML = '<li class="queue-empty">No tasks in queue</li>';
+        return;
+    }
+    el.innerHTML = state.pending.map(task => {
+        const desc = describeTask(task);
+        return `<li class="queue-item">
+            <span class="info">${desc}</span>
+            <span class="status-badge pending">Pending</span>
+            <button class="remove-btn" onclick="removeFromQueue('${task.id}')">🗑</button>
+        </li>`;
+    }).join('');
+}
+
+function renderButton() {
+    const btn = document.getElementById('btnControl');
+    if (state.active && state.active.status === 'active') {
+        btn.className = 'btn-control cancel';
+        btn.textContent = '✕ Cancel';
+        btn.disabled = false;
+    } else if ((state.pending && state.pending.length > 0) || (state.active && state.active.status !== 'active')) {
+        // Has pending work, or cancelled task to clear
+        btn.className = 'btn-control start';
+        btn.textContent = '▶ Start';
+        btn.disabled = !(state.pending && state.pending.length > 0);
+    } else {
+        btn.className = 'btn-control start';
+        btn.textContent = '▶ Start';
+        btn.disabled = true;
+    }
+}
+
+function describeTask(task) {
+    if (task.type === 'operation' && task.params && task.params.quests) {
+        const q = task.params.quests[0];
+        const name = findQuestName(q.quest) || q.quest.join('-');
+        const count = task.params.quests.reduce((s, x) => s + x.count, 0);
+        return `${name} ×${count}`;
+    }
+    if (task.type === 'battle') return 'Battle';
+    return task.type;
+}
+
+function findQuestName(tuple) {
+    if (!catalog) return null;
+    const key = tuple.join('-');
+    for (const part of catalog.parts) {
+        for (const ch of part.chapters) {
+            for (const q of ch.quests) {
+                if (q.id === key) return `${ch.name} - ${q.name}`;
+            }
+        }
+    }
+    return null;
+}
+
+// --- API calls ---
+async function fetchState() {
+    const res = await fetch(`${API}/api/queue`);
+    state = await res.json();
+    render();
+}
+
+async function fetchCatalog() {
+    const res = await fetch(`${API}/api/quests`);
+    catalog = await res.json();
+    populateParts();
+}
+
+async function controlToggle() {
+    if (state.active && state.active.status === 'active') {
+        await fetch(`${API}/api/control/cancel`, { method: 'POST' });
+    } else {
+        await fetch(`${API}/api/control/start`, { method: 'POST' });
+    }
+    setTimeout(fetchState, 300);
+}
+
+async function addToQueue() {
+    const sel = document.getElementById('selQuest');
+    if (!sel.value) return;
+    const quest = JSON.parse(sel.value);
+    const count = parseInt(document.getElementById('inputCount').value) || 1;
+    try {
+        await fetch(`${API}/api/queue`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                type: 'operation',
+                params: {
+                    quests: [{ quest, count }],
+                    apple_total: 0,
+                    apple_kind: 'gold',
+                }
+            })
+        });
+        await fetchState();
+    } catch (e) {
+        console.error('Add to queue error:', e);
+    }
+}
+
+async function removeFromQueue(taskId) {
+    await fetch(`${API}/api/queue/${taskId}`, { method: 'DELETE' });
+    await fetchState();
+}
+
+async function takeScreenshot() {
+    try {
+        const res = await fetch(`${API}/api/screenshot`, { method: 'POST' });
+        const data = await res.json();
+        const box = document.getElementById('screenshotBox');
+        box.innerHTML = `<img src="data:image/jpeg;base64,${data.image}" alt="screenshot">`;
+    } catch (e) {
+        console.error('Screenshot failed:', e);
+    }
+}
+
+// --- Quest selector ---
+function populateParts() {
+    const sel = document.getElementById('selPart');
+    sel.innerHTML = catalog.parts.map(p =>
+        `<option value="${p.id}">${p.name}</option>`
+    ).join('');
+    onPartChange();
+}
+
+function onPartChange() {
+    const partId = document.getElementById('selPart').value;
+    const part = catalog.parts.find(p => p.id === partId);
+    const sel = document.getElementById('selChapter');
+    sel.innerHTML = (part?.chapters || []).map(c =>
+        `<option value="${c.id}">${c.name}</option>`
+    ).join('');
+    onChapterChange();
+}
+
+function onChapterChange() {
+    const partId = document.getElementById('selPart').value;
+    const chapId = document.getElementById('selChapter').value;
+    const part = catalog.parts.find(p => p.id === partId);
+    const chapter = part?.chapters.find(c => c.id === chapId);
+    const sel = document.getElementById('selQuest');
+    sel.innerHTML = (chapter?.quests || []).map(q =>
+        `<option value='${JSON.stringify(q.tuple)}'>${q.name}</option>`
+    ).join('');
+}
+
+// --- Live screenshot toggle ---
+function toggleLive() {
+    const btn = document.getElementById('btnLive');
+    if (liveInterval) {
+        clearInterval(liveInterval);
+        liveInterval = null;
+        btn.classList.remove('active');
+    } else {
+        btn.classList.add('active');
+        takeScreenshot();
+        liveInterval = setInterval(takeScreenshot, 2000);
+    }
+}
+
+// --- Init ---
+connectWS();
+fetchCatalog();
+fetchState();
+</script>
+</body>
+</html>

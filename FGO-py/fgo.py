@@ -8,7 +8,7 @@ except (FileNotFoundError, OSError):
     head=''
 
 parser=argparse.ArgumentParser(description=f'FGO-py {VERSION}')
-parser.add_argument('entrypoint',help='Program entry point (default: %(default)s)',type=str.lower,choices=['cli','web'],default='web',nargs='?')
+parser.add_argument('entrypoint',help='Program entry point (default: %(default)s)',type=str.lower,choices=['cli','web','web2'],default='web',nargs='?')
 parser.add_argument('-v','--version',help='Show FGO-py version',action='version',version=VERSION)
 parser.add_argument('-l','--loglevel',help='Change the console log level (default: %(default)s)',type=str.upper,choices=['DEBUG','INFO','WARNING','CRITICAL','ERROR'],default='INFO')
 parser.add_argument('-c','--config',help='Config file path (default: %(default)s)',type=str,default='fgoConfig.json')
@@ -22,6 +22,7 @@ if arg.no_color:os.environ['NO_COLOR']='1'
 match arg.entrypoint:
     case'cli':from fgoCli import main
     case'web':from fgoWebServer import main
+    case'web2':from fgoWebServerNew import main
 
 import fgoLogging
 fgoLogging.logger.handlers[-1].setLevel(arg.loglevel)
