@@ -19,7 +19,7 @@ class Task:
     id: str = field(default_factory=lambda: uuid.uuid4().hex[:8])
     type: str = ""  # "operation" | "battle"
     params: dict = field(default_factory=dict)
-    status: str = "pending"  # "pending" | "active" | "paused" | "error"
+    status: str = "pending"  # "pending" | "active" | "error"
     result: dict | None = None
     created_at: float = field(default_factory=time.time)
     started_at: float | None = None
@@ -162,9 +162,10 @@ class TaskWorker(threading.Thread):
                 task.finished_at = time.time()
                 task.result = result or {}
             except ScriptStop as e:
-                task.status = "paused"
+                task.status = "error"
                 task.result = {"error": str(e)}
-                logger.info(f"Task {task.id} paused: {e}")
+                task.finished_at = time.time()
+                logger.info(f"Task {task.id} stopped: {e}")
             except Exception as e:
                 task.status = "error"
                 task.result = {"error": repr(e)}

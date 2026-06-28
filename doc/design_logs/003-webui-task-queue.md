@@ -51,7 +51,7 @@ class Task:
     id: str              # UUID
     type: str            # "battle" | "operation"
     params: dict         # type-specific parameters
-    status: str          # "pending" | "active" | "paused" | "error"
+    status: str          # "pending" | "active" | "error"
     result: dict | None  # filled on completion
     created_at: float
     started_at: float | None
