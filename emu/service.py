@@ -39,6 +39,10 @@ def get_backend() -> LDPlayerBackend:
     return backend
 
 
+# Farming progress store: {(script_name, instance_index): {current, total, status, ...}}
+_farming_progress: dict[tuple[str, int], dict] = {}
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Initialize backend on startup."""
@@ -68,7 +72,7 @@ def _register_default_scripts():
         display_name="FGO-py",
         package_filter="com.aniplex.fategrandorder*",
         base_port=15001,
-        start_command="uv run python FGO-py/fgo.py --web --device {serial} --port {port}",
+        start_command="uv run python FGO-py/fgo.py web --device ldplayer:{index} --port {port}",
     ))
 
 
@@ -226,7 +230,11 @@ def create_app() -> FastAPI:
 
         b = get_backend()
         serial = b.adb_serial(instance_index)
-        proc = registry.start(name, instance_index, serial)
+
+        # Use the repo root as cwd for script processes
+        import pathlib
+        repo_root = pathlib.Path(__file__).parent.parent
+        proc = registry.start(name, instance_index, serial, cwd=repo_root)
         return {
             "status": proc.status,
             "pid": proc.pid,
@@ -243,6 +251,29 @@ def create_app() -> FastAPI:
 
         success = registry.stop(name, instance_index)
         return {"success": success}
+
+    # --- Farming Progress ---
+
+    @app.post("/api/scripts/{name}/progress")
+    async def report_progress(name: str, request: Request):
+        """Called by automation scripts to report farming progress."""
+        body = await request.json()
+        instance_index = body.get("instance_index", 0)
+        _farming_progress[(name, instance_index)] = {
+            "current": body.get("current", 0),
+            "total": body.get("total", 0),
+            "status": body.get("status", "running"),
+            "detail": body.get("detail", ""),
+        }
+        return {"ok": True}
+
+    @app.get("/api/scripts/{name}/progress/{instance_index}")
+    async def get_progress(name: str, instance_index: int):
+        """Get farming progress for a script on a specific instance."""
+        progress = _farming_progress.get((name, instance_index))
+        if progress is None:
+            return {"current": 0, "total": 0, "status": "idle", "detail": ""}
+        return progress
 
     # --- System ---
 

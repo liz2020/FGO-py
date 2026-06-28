@@ -108,12 +108,13 @@ class ScriptRegistry:
         logger.info("Starting %s for instance %d: %s", script_name, index, command)
 
         try:
+            # Use DEVNULL to avoid blocking on full pipe buffers
             proc = subprocess.Popen(
                 command,
                 shell=True,
                 cwd=cwd,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
                 creationflags=subprocess.CREATE_NO_WINDOW if hasattr(subprocess, "CREATE_NO_WINDOW") else 0,
             )
             process = ScriptProcess(
