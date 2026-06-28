@@ -87,7 +87,10 @@ class LDConsole:
     def list_instances(self) -> list[dict]:
         """Parse `ldconsole list2` output into instance dicts.
 
-        Output format: index,name,top_window_handle,bind_window_handle,is_running,pid,vbox_pid
+        Output format (LDPlayer 14):
+            index,name,top_window_handle,bind_window_handle,is_running,pid,vbox_pid,width,height,dpi
+        Older format (7 fields):
+            index,name,top_window_handle,bind_window_handle,is_running,pid,vbox_pid
         """
         output = self._run("list2")
         instances = []
@@ -95,15 +98,19 @@ class LDConsole:
             parts = line.split(",")
             if len(parts) < 7:
                 continue
-            instances.append({
+            item = {
                 "index": int(parts[0]),
                 "name": parts[1],
                 "top_window_handle": int(parts[2]),
                 "bind_window_handle": int(parts[3]),
-                "is_running": parts[4] == "1",
+                "is_running": parts[4] != "0",
                 "pid": int(parts[5]) if parts[5] != "-1" and parts[5] != "0" else None,
                 "vbox_pid": int(parts[6]) if parts[6] != "-1" and parts[6] != "0" else None,
-            })
+                "width": int(parts[7]) if len(parts) > 7 else 0,
+                "height": int(parts[8]) if len(parts) > 8 else 0,
+                "dpi": int(parts[9]) if len(parts) > 9 else 0,
+            }
+            instances.append(item)
         return instances
 
     def get_instance_prop(self, index: int, key: str) -> str:
@@ -202,11 +209,14 @@ class LDPlayerBackend(EmulatorBackend):
         instances = []
         for item in raw:
             status = InstanceStatus.RUNNING if item["is_running"] else InstanceStatus.STOPPED
+            resolution = f"{item['width']}x{item['height']}" if item.get("width") else ""
             inst = EmulatorInstance(
                 index=item["index"],
                 name=item["name"],
                 status=status,
                 pid=item["pid"],
+                resolution=resolution,
+                dpi=item.get("dpi", 0),
                 adb_serial=console.adb_serial(item["index"]),
                 emulator_brand="ldplayer",
             )
@@ -248,14 +258,29 @@ class LDPlayerBackend(EmulatorBackend):
         return console.kill_app(index, package_name) if console else False
 
     def screenshot(self, index: int) -> np.ndarray | None:
-        """Capture screenshot using LDOpenGL shared memory."""
+        """Capture screenshot using LDOpenGL DLL (CreateScreenShotInstance)."""
         from emu.ldopengl import LDOpenGL
 
         console = self._ensure_console()
         if console is None:
             return None
+
+        # Get instance info for pid and resolution
+        raw = console.list_instances()
+        item = next((i for i in raw if i["index"] == index), None)
+        if item is None:
+            return None
+
+        pid = item.get("pid") or 0
+        width = item.get("width") or 0
+        height = item.get("height") or 0
+
+        if not item.get("is_running"):
+            logger.debug("Instance %d is not running", index)
+            return None
+
         try:
-            opengl = LDOpenGL(console.install_dir, index)
+            opengl = LDOpenGL(console.install_dir, index, pid=pid, width=width, height=height)
             return opengl.screenshot()
         except Exception as e:
             logger.error("Screenshot failed for instance %d: %s", index, e)
