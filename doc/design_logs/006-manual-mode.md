@@ -218,15 +218,59 @@ The `/api/control/start` and `/api/control/auto-battle` endpoints would reject w
 
 ---
 
+## Suppress Screenshot Access Log
+
+Uvicorn's default access logger prints a line for every `POST /api/screenshot 200`. At 30 FPS this floods the console. Fix: only log screenshot requests on **failure** (non-2xx).
+
+### Approach
+
+Add a custom ASGI middleware that suppresses uvicorn access log for the screenshot endpoint on success:
+
+```python
+from starlette.middleware.base import BaseHTTPMiddleware
+
+class SuppressScreenshotLogMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request, call_next):
+        response = await call_next(request)
+        if request.url.path == "/api/screenshot" and response.status_code < 400:
+            # Attach a flag so the custom log filter skips this request
+            response.headers["X-No-Access-Log"] = "1"
+        return response
+```
+
+Alternatively (simpler): set `access_log=False` in `uvicorn.run()` and use FastAPI's own logging where needed:
+
+```python
+uvicorn.run(app, host="0.0.0.0", port=port, log_level="info", access_log=False)
+```
+
+Then add explicit error-only logging in the screenshot endpoint:
+
+```python
+@app.post("/api/screenshot")
+async def screenshot():
+    if not fgoDevice.device.available:
+        logger.warning("Screenshot request failed: device not available")
+        raise HTTPException(503, "Device not available")
+    img = fgoDevice.device.screenshot()
+    _, buf = cv2.imencode('.jpg', img, [cv2.IMWRITE_JPEG_QUALITY, 80])
+    return {"image": base64.b64encode(buf.tobytes()).decode()}
+```
+
+**Recommendation**: Use `access_log=False` — it's the simplest, and the only high-frequency endpoint is `/api/screenshot`. Other endpoints are infrequent enough that explicit logging isn't needed, or can be added selectively.
+
+---
+
 ## Implementation Order
 
-1. Backend: Add `/api/input/tap` and `/api/input/swipe` endpoints
-2. Backend: Add `/api/control/manual` toggle endpoint with cancel logic
-3. Frontend: Add Manual button + CSS
-4. Frontend: Pointer event handlers with coordinate translation
-5. Frontend: FPS switch logic (33ms interval in manual mode)
-6. Frontend: State sync via WS `manual_mode` event
-7. Frontend: Disable Auto Battle / Start when manual mode is on
+1. Backend: Disable uvicorn access log (`access_log=False`), add error-only logging for screenshot
+2. Backend: Add `/api/input/tap` and `/api/input/swipe` endpoints
+3. Backend: Add `/api/control/manual` toggle endpoint with cancel logic
+4. Frontend: Add Manual button + CSS
+5. Frontend: Pointer event handlers with coordinate translation
+6. Frontend: FPS switch logic (33ms interval in manual mode)
+7. Frontend: State sync via WS `manual_mode` event
+8. Frontend: Disable Auto Battle / Start when manual mode is on
 
 ---
 
