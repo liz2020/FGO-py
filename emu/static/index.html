@@ -442,12 +442,9 @@
         ws.send(JSON.stringify({ action, index }));
 
         const badge = document.getElementById(`live-${index}`);
-        const ph = document.getElementById(`ph-${index}`);
         const btn = document.getElementById(`btnLive-${index}`);
         if (badge) badge.classList.toggle('active', streaming[index]);
         if (btn) btn.classList.toggle('active', streaming[index]);
-        if (ph && streaming[index]) ph.textContent = '';
-        if (ph && !streaming[index]) { ph.textContent = 'No preview'; ph.style.display = 'block'; }
     }
 
     // --- Init ---

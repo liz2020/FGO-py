@@ -61,6 +61,7 @@
             border-radius: var(--radius);
             overflow: hidden;
             position: relative;
+            touch-action: none;
         }
         .screenshot-container img {
             width: 100%;
@@ -649,7 +650,14 @@ async function takeScreenshot() {
         const res = await fetch(`${API}/api/screenshot`, { method: 'POST' });
         const data = await res.json();
         const box = document.getElementById('screenshotBox');
-        box.innerHTML = `<img src="data:image/jpeg;base64,${data.image}" alt="screenshot">`;
+        let img = box.querySelector('img');
+        if (!img) {
+            box.innerHTML = '';
+            img = document.createElement('img');
+            img.alt = 'screenshot';
+            box.appendChild(img);
+        }
+        img.src = `data:image/jpeg;base64,${data.image}`;
     } catch (e) {
         console.error('Screenshot failed:', e);
     }
