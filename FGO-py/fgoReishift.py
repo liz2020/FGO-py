@@ -6,11 +6,32 @@ from fgoSchedule import schedule
 logger=getLogger('Reishift')
 
 class List:
-    def __init__(self,name):self.name=name
+    MAX_SCROLLS=20
+    def __init__(self,name,optional=False):
+        self.name=name
+        self.optional=optional
+    def _children_visible(self):
+        """Check if child chapters are directly visible (ungrouped state)."""
+        from fgoMetadata import chapterImg
+        for key in chapterImg:
+            if len(key)==2 and key[0]==self.name[0] and key!=self.name:
+                if Detect(.4).findChapter(key):return True
+        return False
     def __call__(self):
         while not Detect(0,1).isMainInterface():pass
         while not Detect(.4).isQuestListBegin():fgoDevice.device.swipe((1000,200),(1000,600))
-        while not((p:=Detect(.4).findChapter(self.name))and(fgoDevice.device.touch(p),True)[1]):fgoDevice.device.swipe((1000,600),(1000,200))
+        if self.optional and self._children_visible():
+            logger.info(f'Children of {self.name} already visible, skipping group header')
+            return
+        scrolls=0
+        while not((p:=Detect(.4).findChapter(self.name))and(fgoDevice.device.touch(p),True)[1]):
+            fgoDevice.device.swipe((1000,600),(1000,200))
+            scrolls+=1
+            if scrolls>=self.MAX_SCROLLS:
+                if self.optional:
+                    logger.info(f'Optional node {self.name} not found after {scrolls} scrolls, skipping')
+                    return
+                raise RuntimeError(f'Navigation node {self.name} not found after {scrolls} scrolls')
 class Map:
     poly=numpy.array([(230,40),(230,200),(40,200),(40,450),(150,450),(220,520),(630,520),(630,680),(980,680),(980,570),(1240,570),(1240,40)])
     def __init__(self,name,coord):
@@ -51,7 +72,7 @@ class OrdaelCall:
             fgoDevice.device.touch(self.coord)
 
 place={i.name:i for i in(
-List((0,)),List((1,)),List((2,)),List((4,)),List((5,)),
+List((0,)),List((1,),optional=True),List((2,),optional=True),List((4,)),List((5,)),
 List((0,0)),
 List((1,0)),List((1,1)),List((1,2)),List((1,3)),List((1,4)),List((1,5)),List((1,6)),List((1,7)),
 List((2,0)),List((2,1)),List((2,2)),List((2,3)),
