@@ -748,13 +748,18 @@ async function startAutoBattle() {
             console.error('Cancel auto battle error:', e);
         }
     } else {
-        // Exit manual mode first if active
+        // Exit manual mode first if active, keep live on
         if (manualMode) {
             await fetch(`${API}/api/control/manual`, {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify({active: false})
             });
+            // Ensure live stays active after exiting manual mode
+            if (!liveActive) {
+                startLive();
+                document.getElementById('btnLive').classList.add('active');
+            }
         }
         try {
             await fetch(`${API}/api/control/auto-battle`, { method: 'POST' });
