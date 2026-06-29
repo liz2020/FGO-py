@@ -244,10 +244,14 @@ async def screenshot():
     if not fgoDevice.device.available:
         logger.warning("Screenshot request failed: device not available")
         raise HTTPException(503, "Device not available")
-    # Run in thread to avoid blocking event loop (important for concurrent WS clients)
-    img = await asyncio.to_thread(fgoDevice.device.screenshot)
-    _, buf = cv2.imencode('.jpg', img, [cv2.IMWRITE_JPEG_QUALITY, 80])
-    return {"image": base64.b64encode(buf.tobytes()).decode()}
+
+    def _capture():
+        img = fgoDevice.device.screenshot()
+        _, buf = cv2.imencode('.jpg', img, [cv2.IMWRITE_JPEG_QUALITY, 80])
+        return base64.b64encode(buf.tobytes()).decode()
+
+    data = await asyncio.to_thread(_capture)
+    return {"image": data}
 
 
 # --- WebSocket ---

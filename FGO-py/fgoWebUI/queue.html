@@ -411,6 +411,7 @@ let ws = null;
 let catalog = null;
 let state = { active: null, pending: [], running: false };
 let liveInterval = null;
+let liveActive = false;
 let autoBattleActive = false;
 let manualMode = false;
 let preManualLiveState = false;
@@ -652,6 +653,10 @@ async function takeScreenshot() {
     } catch (e) {
         console.error('Screenshot failed:', e);
     }
+    // Schedule next frame if live is active (non-overlapping loop)
+    if (liveActive) {
+        liveInterval = setTimeout(takeScreenshot, 100);
+    }
 }
 
 // --- Quest selector ---
@@ -687,15 +692,23 @@ function onChapterChange() {
 // --- Live screenshot toggle ---
 function toggleLive() {
     const btn = document.getElementById('btnLive');
-    if (liveInterval) {
-        clearInterval(liveInterval);
-        liveInterval = null;
+    if (liveActive) {
+        stopLive();
         btn.classList.remove('active');
     } else {
+        startLive();
         btn.classList.add('active');
-        takeScreenshot();
-        liveInterval = setInterval(takeScreenshot, 100);
     }
+}
+
+function startLive() {
+    liveActive = true;
+    takeScreenshot();
+}
+
+function stopLive() {
+    liveActive = false;
+    if (liveInterval) { clearTimeout(liveInterval); liveInterval = null; }
 }
 
 // --- Auto Battle ---
@@ -839,26 +852,26 @@ async function toggleManual() {
 
 function enableManualPreview() {
     // Remember if live was on before
-    preManualLiveState = !!liveInterval;
-    // Force live on at 30 FPS
-    if (liveInterval) clearInterval(liveInterval);
+    preManualLiveState = liveActive;
+    // Force live on
+    stopLive();
     const btn = document.getElementById('btnLive');
     btn.classList.add('active');
-    takeScreenshot();
-    liveInterval = setInterval(takeScreenshot, 100);
+    startLive();
     // Attach pointer handlers
     attachPointerHandlers();
 }
 
 function disableManualPreview() {
     // Restore live to previous state
-    if (liveInterval) clearInterval(liveInterval);
-    liveInterval = null;
+    stopLive();
     if (preManualLiveState) {
         const btn = document.getElementById('btnLive');
         btn.classList.add('active');
-        takeScreenshot();
-        liveInterval = setInterval(takeScreenshot, 100);
+        startLive();
+    } else {
+        document.getElementById('btnLive').classList.remove('active');
+    }
     // Remove pointer handlers
     detachPointerHandlers();
 }
