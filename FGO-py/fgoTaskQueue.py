@@ -234,6 +234,12 @@ def is_auto_battle_active() -> bool:
     return _auto_battle_active
 
 
+def cancel_auto_battle():
+    """Cancel a running auto-battle by triggering schedule.stop()."""
+    if _auto_battle_active:
+        schedule.stop('Auto battle cancelled')
+
+
 def run_auto_battle(broadcast: Callable):
     """Run a one-off Battle() in a new thread. Broadcasts start/finish events."""
     global _auto_battle_active

@@ -147,6 +147,27 @@
             background: rgba(78, 204, 163, 0.2);
             color: var(--success);
         }
+        .active-task .expand-btn {
+            background: none;
+            border: none;
+            color: var(--text-dim);
+            font-size: 0.9rem;
+            cursor: pointer;
+            padding: 4px 8px;
+            transition: transform 0.2s;
+        }
+        .active-task .expand-btn.expanded { transform: rotate(90deg); }
+        .active-box .item-details {
+            display: none;
+            margin-top: 0;
+            margin-bottom: 10px;
+            padding: 8px;
+            background: var(--card);
+            border-radius: 6px;
+            font-size: 0.8rem;
+            color: var(--text-dim);
+        }
+        .active-box .item-details.show { display: block; }
         .active-empty {
             color: var(--text-dim);
             font-size: 0.85rem;
@@ -374,6 +395,7 @@ let catalog = null;
 let state = { active: null, pending: [], running: false };
 let liveInterval = null;
 let autoBattleActive = false;
+let expandedIds = new Set();  // track expanded task IDs across re-renders
 
 // Back link visibility
 (function() {
@@ -447,19 +469,24 @@ function renderActive() {
     const el = document.getElementById('activeSlot');
     if (state.active) {
         const desc = describeTask(state.active);
+        const details = describeTaskDetails(state.active);
+        const expanded = expandedIds.has('active');
         const st = state.active.status;
         if (st === 'active') {
             el.innerHTML = `<div class="active-task">
                 <span class="info">${desc}</span>
                 <span class="status-badge">Running</span>
-            </div>`;
+                <button class="expand-btn${expanded ? ' expanded' : ''}" onclick="toggleExpand(this, 'active')">▸</button>
+            </div>
+            <div class="item-details${expanded ? ' show' : ''}">${details}</div>`;
         } else {
-            // cancelled or error — show status, Start will clear it
             const label = st === 'error' ? 'Error' : 'Cancelled';
             el.innerHTML = `<div class="active-task" style="border-color: var(--primary);">
                 <span class="info">${desc}</span>
                 <span class="status-badge" style="background: rgba(233,69,96,0.2); color: var(--primary);">${label}</span>
-            </div>`;
+                <button class="expand-btn${expanded ? ' expanded' : ''}" onclick="toggleExpand(this, 'active')">▸</button>
+            </div>
+            <div class="item-details${expanded ? ' show' : ''}">${details}</div>`;
         }
     } else {
         el.innerHTML = '<div class="active-empty">No active task</div>';
@@ -475,15 +502,16 @@ function renderPending() {
     el.innerHTML = state.pending.map((task, idx) => {
         const desc = describeTask(task);
         const details = describeTaskDetails(task);
+        const expanded = expandedIds.has(task.id);
         return `<li class="queue-item" draggable="true" data-id="${task.id}" data-idx="${idx}">
             <div class="item-header">
                 <span class="drag-handle">≡</span>
                 <span class="info">${desc}</span>
                 <span class="status-badge pending">Pending</span>
-                <button class="expand-btn" onclick="toggleExpand(this)">▸</button>
+                <button class="expand-btn${expanded ? ' expanded' : ''}" onclick="toggleExpand(this, '${task.id}')">▸</button>
                 <button class="remove-btn" onclick="removeFromQueue('${task.id}')">🗑</button>
             </div>
-            <div class="item-details">${details}</div>
+            <div class="item-details${expanded ? ' show' : ''}">${details}</div>
         </li>`;
     }).join('');
     setupDragAndDrop();
@@ -645,8 +673,8 @@ function renderAutoBattle() {
     const btn = document.getElementById('btnAutoBattle');
     if (autoBattleActive) {
         btn.className = 'btn-auto-battle active';
-        btn.textContent = '⚔ Running...';
-        btn.disabled = true;
+        btn.textContent = '⚔ Cancel';
+        btn.disabled = false;
     } else {
         btn.className = 'btn-auto-battle';
         btn.textContent = '⚔ Auto Battle';
@@ -655,18 +683,36 @@ function renderAutoBattle() {
 }
 
 async function startAutoBattle() {
-    try {
-        await fetch(`${API}/api/control/auto-battle`, { method: 'POST' });
-    } catch (e) {
-        console.error('Auto battle error:', e);
+    if (autoBattleActive) {
+        // Cancel running auto-battle
+        try {
+            await fetch(`${API}/api/control/auto-battle/cancel`, { method: 'POST' });
+        } catch (e) {
+            console.error('Cancel auto battle error:', e);
+        }
+    } else {
+        try {
+            await fetch(`${API}/api/control/auto-battle`, { method: 'POST' });
+        } catch (e) {
+            console.error('Auto battle error:', e);
+        }
     }
 }
 
 // --- Expandable items ---
-function toggleExpand(btn) {
+function toggleExpand(btn, id) {
+    if (expandedIds.has(id)) {
+        expandedIds.delete(id);
+    } else {
+        expandedIds.add(id);
+    }
     btn.classList.toggle('expanded');
-    const details = btn.closest('.queue-item').querySelector('.item-details');
-    details.classList.toggle('show');
+    // Find the sibling .item-details: either in queue-item or directly after active-task
+    const parent = btn.closest('.queue-item') || btn.closest('#activeSlot');
+    if (parent) {
+        const details = parent.querySelector('.item-details');
+        if (details) details.classList.toggle('show');
+    }
 }
 
 function describeTaskDetails(task) {

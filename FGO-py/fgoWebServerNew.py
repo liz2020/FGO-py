@@ -14,7 +14,7 @@ from pydantic import BaseModel
 
 import fgoDevice
 from fgoLogging import getLogger
-from fgoTaskQueue import Task, task_queue, task_worker, run_auto_battle, is_auto_battle_active
+from fgoTaskQueue import Task, task_queue, task_worker, run_auto_battle, is_auto_battle_active, cancel_auto_battle
 from fgoQuestCatalog import get_catalog
 
 logger = getLogger('WebNew')
@@ -164,6 +164,14 @@ async def auto_battle():
 
     if not run_auto_battle(_broadcast):
         raise HTTPException(409, "Cannot start auto battle")
+    return {"ok": True}
+
+
+@app.post("/api/control/auto-battle/cancel")
+async def auto_battle_cancel():
+    if not is_auto_battle_active():
+        raise HTTPException(404, "No auto battle running")
+    cancel_auto_battle()
     return {"ok": True}
 
 
