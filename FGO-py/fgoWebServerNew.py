@@ -129,6 +129,8 @@ async def remove_task(task_id: str):
 
 @app.post("/api/control/start")
 async def control_start():
+    if _manual_mode:
+        raise HTTPException(409, "Manual mode is active")
     task_queue.start()
     state = task_queue.get_state()
     ws_manager.enqueue({"event": "state_updated", "state": state})
@@ -152,6 +154,8 @@ async def reorder_queue(req: ReorderRequest):
 
 @app.post("/api/control/auto-battle")
 async def auto_battle():
+    if _manual_mode:
+        raise HTTPException(409, "Manual mode is active")
     if task_queue.is_busy():
         raise HTTPException(409, "A task is currently running")
     if is_auto_battle_active():
@@ -175,6 +179,89 @@ async def auto_battle_cancel():
     return {"ok": True}
 
 
+# --- Manual mode ---
+
+_manual_mode = False
+
+
+class ManualModeRequest(BaseModel):
+    active: bool
+
+
+class TapRequest(BaseModel):
+    x: int
+    y: int
+
+
+class SwipeRequest(BaseModel):
+    x1: int
+    y1: int
+    x2: int
+    y2: int
+    duration: int = 300
+
+
+class HoldRequest(BaseModel):
+    x: int
+    y: int
+    duration: int = 1000
+
+
+@app.post("/api/control/manual")
+async def toggle_manual(req: ManualModeRequest):
+    global _manual_mode
+    if req.active:
+        # Cancel running work before entering manual mode
+        if is_auto_battle_active():
+            cancel_auto_battle()
+        if task_queue.is_busy():
+            task_queue.cancel()
+    _manual_mode = req.active
+    ws_manager.enqueue({"event": "manual_mode", "active": req.active})
+    return {"ok": True}
+
+
+@app.post("/api/input/tap")
+async def input_tap(req: TapRequest):
+    if not fgoDevice.device.available:
+        raise HTTPException(503, "Device not available")
+    # Run in thread — touch uses time.sleep internally
+    await asyncio.to_thread(fgoDevice.device.I.touch, (req.x, req.y))
+    return {"ok": True}
+
+
+@app.post("/api/input/swipe")
+async def input_swipe(req: SwipeRequest):
+    if not fgoDevice.device.available:
+        raise HTTPException(503, "Device not available")
+    await asyncio.to_thread(
+        fgoDevice.device.I.swipe, (req.x1, req.y1), (req.x2, req.y2), req.duration
+    )
+    return {"ok": True}
+
+
+@app.post("/api/input/hold")
+async def input_hold(req: HoldRequest):
+    if not fgoDevice.device.available:
+        raise HTTPException(503, "Device not available")
+
+    def _hold():
+        import ctypes, time
+        user32 = ctypes.windll.user32
+        dev = fgoDevice.device.I
+        x = int(req.x * dev._scale_x)
+        y = int(req.y * dev._scale_y)
+        lparam = x | (y << 16)
+        user32.PostMessageW(dev._render_hwnd, dev.WM_MOUSEMOVE, 0, lparam)
+        time.sleep(0.01)
+        user32.PostMessageW(dev._render_hwnd, dev.WM_LBUTTONDOWN, dev.MK_LBUTTON, lparam)
+        time.sleep(req.duration / 1000.0)
+        user32.PostMessageW(dev._render_hwnd, dev.WM_LBUTTONUP, 0, lparam)
+
+    await asyncio.to_thread(_hold)
+    return {"ok": True}
+
+
 @app.get("/api/quests")
 async def get_quests(lang: str = "zh"):
     return get_catalog(lang)
@@ -183,11 +270,16 @@ async def get_quests(lang: str = "zh"):
 @app.post("/api/screenshot")
 async def screenshot():
     if not fgoDevice.device.available:
+        logger.warning("Screenshot request failed: device not available")
         raise HTTPException(503, "Device not available")
-    # Use raw screenshot — bypass Detect() which calls schedule.sleep/checkStop
-    img = fgoDevice.device.screenshot()
-    _, buf = cv2.imencode('.jpg', img, [cv2.IMWRITE_JPEG_QUALITY, 80])
-    return {"image": base64.b64encode(buf.tobytes()).decode()}
+
+    def _capture():
+        img = fgoDevice.device.screenshot()
+        _, buf = cv2.imencode('.jpg', img, [cv2.IMWRITE_JPEG_QUALITY, 80])
+        return base64.b64encode(buf.tobytes()).decode()
+
+    data = await asyncio.to_thread(_capture)
+    return {"image": data}
 
 
 # --- WebSocket ---
@@ -221,7 +313,7 @@ async def ws_status(websocket: WebSocket):
 
 def main(config=None, port: int = 15000):
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=port, log_level="info")
+    uvicorn.run(app, host="0.0.0.0", port=port, log_level="info", access_log=False)
 
 
 if __name__ == "__main__":

@@ -75,7 +75,7 @@ class LDOpenGL:
             self._create_func.argtypes = [ctypes.c_uint, ctypes.c_uint]
             self._create_func.restype = ctypes.c_void_p
             self._ptr_size = 8 if is_64bit else 4
-            logger.info("Loaded %s", dll_path.name)
+            logger.debug("Loaded %s", dll_path.name)
             return True
         except Exception as e:
             logger.error("Failed to load %s: %s", dll_path.name, e)

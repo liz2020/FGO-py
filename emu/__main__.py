@@ -26,6 +26,9 @@ def main():
         datefmt="%H:%M:%S",
     )
 
+    # Suppress noisy httpx request logs (e.g. repeated screenshot proxy calls)
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+
     import uvicorn
     uvicorn.run(
         "emu.service:create_app",
@@ -34,6 +37,7 @@ def main():
         port=args.port,
         reload=args.reload,
         log_level=args.log_level,
+        access_log=False,
     )
 
 

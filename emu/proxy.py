@@ -47,8 +47,10 @@ def setup_proxy_routes(app: FastAPI, registry: ScriptRegistry) -> None:
                         await upstream.send(data)
 
                 await asyncio.gather(forward_to_client(), forward_to_upstream())
-        except (WebSocketDisconnect, Exception):
+        except WebSocketDisconnect:
             pass
+        except Exception as e:
+            logger.warning("Proxy WS error for %s/%d: %s", script_name, index, e)
 
     @app.api_route(
         "/scripts/{script_name}/{index}/{path:path}",
