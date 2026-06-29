@@ -346,21 +346,11 @@ function handleEvent(msg) {
     switch (msg.event) {
         case 'state_updated':
         case 'task_finished':
+        case 'task_started':
+        case 'queue_idle':
             if (msg.state) {
                 state = msg.state;
-                render();
             }
-            break;
-        case 'task_started':
-            if (msg.task) {
-                state.active = msg.task;
-                state.running = true;
-                render();
-            }
-            break;
-        case 'queue_idle':
-            state.active = null;
-            state.running = false;
             render();
             break;
     }
