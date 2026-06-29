@@ -151,7 +151,7 @@ async def _poll_status(
 async def _stream_screenshots(
     websocket: WebSocket,
     get_backend: Callable[[], LDPlayerBackend],
-    fps: float = 3.0,
+    fps: float = 10.0,
 ):
     """Stream screenshots to subscribed clients at the configured FPS."""
     interval = 1.0 / fps

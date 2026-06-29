@@ -694,7 +694,7 @@ function toggleLive() {
     } else {
         btn.classList.add('active');
         takeScreenshot();
-        liveInterval = setInterval(takeScreenshot, 2000);
+        liveInterval = setInterval(takeScreenshot, 100);
     }
 }
 
@@ -858,10 +858,7 @@ function disableManualPreview() {
         const btn = document.getElementById('btnLive');
         btn.classList.add('active');
         takeScreenshot();
-        liveInterval = setInterval(takeScreenshot, 2000);
-    } else {
-        document.getElementById('btnLive').classList.remove('active');
-    }
+        liveInterval = setInterval(takeScreenshot, 100);
     // Remove pointer handlers
     detachPointerHandlers();
 }
