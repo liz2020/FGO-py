@@ -14,7 +14,7 @@ from pydantic import BaseModel
 
 import fgoDevice
 from fgoLogging import getLogger
-from fgoTaskQueue import Task, task_queue, task_worker
+from fgoTaskQueue import Task, task_queue, task_worker, run_auto_battle, is_auto_battle_active, cancel_auto_battle
 from fgoQuestCatalog import get_catalog
 
 logger = getLogger('WebNew')
@@ -90,6 +90,10 @@ class MoveRequest(BaseModel):
     position: int
 
 
+class ReorderRequest(BaseModel):
+    ids: list[str]
+
+
 # --- REST endpoints ---
 
 @app.get("/")
@@ -134,6 +138,40 @@ async def control_start():
 @app.post("/api/control/cancel")
 async def control_cancel():
     task_queue.cancel()
+    return {"ok": True}
+
+
+@app.post("/api/queue/reorder")
+async def reorder_queue(req: ReorderRequest):
+    if not task_queue.reorder(req.ids):
+        raise HTTPException(400, "IDs don't match pending tasks")
+    state = task_queue.get_state()
+    ws_manager.enqueue({"event": "state_updated", "state": state})
+    return {"ok": True}
+
+
+@app.post("/api/control/auto-battle")
+async def auto_battle():
+    if task_queue.is_busy():
+        raise HTTPException(409, "A task is currently running")
+    if is_auto_battle_active():
+        raise HTTPException(409, "Auto battle already running")
+
+    def _broadcast(event):
+        loop = _loop
+        if loop and loop.is_running():
+            loop.call_soon_threadsafe(ws_manager.enqueue, event)
+
+    if not run_auto_battle(_broadcast):
+        raise HTTPException(409, "Cannot start auto battle")
+    return {"ok": True}
+
+
+@app.post("/api/control/auto-battle/cancel")
+async def auto_battle_cancel():
+    if not is_auto_battle_active():
+        raise HTTPException(404, "No auto battle running")
+    cancel_auto_battle()
     return {"ok": True}
 
 

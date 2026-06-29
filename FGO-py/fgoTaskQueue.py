@@ -109,6 +109,19 @@ class TaskQueue:
         self._running = False
         schedule.stop('Cancelled by user')
 
+    def reorder(self, ids: list[str]) -> bool:
+        """Reorder pending tasks to match the given ID order."""
+        with self._lock:
+            if set(ids) != {t.id for t in self._tasks}:
+                return False
+            index = {t.id: t for t in self._tasks}
+            self._tasks = deque(index[i] for i in ids)
+            return True
+
+    def is_busy(self) -> bool:
+        """True if there is an actively running task."""
+        return self._current is not None and self._current.status == "active"
+
     def pop_next(self) -> Task | None:
         """Block until a task is available and queue is running."""
         while True:
@@ -190,9 +203,14 @@ class TaskWorker(threading.Thread):
                 apple_kind = ["gold", "silver", "bronze", "copper", "quartz"].index(
                     task.params.get("apple_kind", "gold")
                 )
-                logger.info(f"Starting operation: quests={quests}, apples={apple_total}")
-                op = fgoKernel.Operation(quests, apple_total, apple_kind)
-                op()
+                normal_attack_only = task.params.get("normal_attack_only", False)
+                logger.info(f"Starting operation: quests={quests}, apples={apple_total}, normal_attack_only={normal_attack_only}")
+                fgoKernel.Turn.normalAttackOnly = normal_attack_only
+                try:
+                    op = fgoKernel.Operation(quests, apple_total, apple_kind)
+                    op()
+                finally:
+                    fgoKernel.Turn.normalAttackOnly = False
                 return {"battle_count": getattr(op, 'battleCount', 0)}
             case "battle":
                 logger.info("Starting battle")
@@ -205,3 +223,45 @@ class TaskWorker(threading.Thread):
 # Module-level singleton
 task_queue = TaskQueue()
 task_worker = TaskWorker(task_queue)
+
+
+# Auto-battle: one-off battle execution outside the queue
+_auto_battle_lock = threading.Lock()
+_auto_battle_active = False
+
+
+def is_auto_battle_active() -> bool:
+    return _auto_battle_active
+
+
+def cancel_auto_battle():
+    """Cancel a running auto-battle by triggering schedule.stop()."""
+    if _auto_battle_active:
+        schedule.stop('Auto battle cancelled')
+
+
+def run_auto_battle(broadcast: Callable):
+    """Run a one-off Battle() in a new thread. Broadcasts start/finish events."""
+    global _auto_battle_active
+    with _auto_battle_lock:
+        if _auto_battle_active or task_queue.is_busy():
+            return False
+        _auto_battle_active = True
+
+    def _run():
+        global _auto_battle_active
+        broadcast({"event": "auto_battle_started", "state": task_queue.get_state()})
+        try:
+            schedule.reset()
+            fgoKernel.Battle()()
+            logger.info("Auto battle completed")
+        except ScriptStop as e:
+            logger.info(f"Auto battle cancelled: {e}")
+        except Exception:
+            logger.exception("Auto battle failed")
+        finally:
+            _auto_battle_active = False
+            broadcast({"event": "auto_battle_finished", "state": task_queue.get_state()})
+
+    threading.Thread(target=_run, daemon=True, name="AutoBattle").start()
+    return True
