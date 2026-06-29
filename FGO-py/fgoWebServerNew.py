@@ -22,6 +22,8 @@ logger = getLogger('WebNew')
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    global _loop
+    _loop = asyncio.get_running_loop()
     # Start the task worker thread
     task_worker.start()
     logger.info("Task worker started")
@@ -70,12 +72,6 @@ def _on_task_event(event: dict):
 
 
 task_queue.subscribe(_on_task_event)
-
-
-@app.on_event("startup")
-async def _capture_loop():
-    global _loop
-    _loop = asyncio.get_running_loop()
 
 
 # --- Pydantic models ---
