@@ -78,6 +78,7 @@
         .screenshot-controls {
             display: flex;
             justify-content: flex-end;
+            gap: 8px;
             margin-top: 6px;
             margin-bottom: 12px;
         }
@@ -95,6 +96,22 @@
             border-color: var(--success);
             color: var(--success);
             background: rgba(78, 204, 163, 0.1);
+        }
+        .btn-auto-battle {
+            padding: 4px 12px;
+            border-radius: 6px;
+            font-size: 0.8rem;
+            font-weight: 600;
+            cursor: pointer;
+            border: 1px solid var(--warning);
+            background: transparent;
+            color: var(--warning);
+        }
+        .btn-auto-battle:disabled { opacity: 0.4; cursor: not-allowed; }
+        .btn-auto-battle.active {
+            border-color: var(--warning);
+            color: #000;
+            background: var(--warning);
         }
 
         /* Active Task Box */
@@ -167,16 +184,38 @@
         /* Queue List */
         .queue-list { list-style: none; }
         .queue-item {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
             background: var(--card);
             border-radius: 8px;
             padding: 10px 12px;
             margin-bottom: 6px;
             font-size: 0.85rem;
+            cursor: grab;
+            transition: opacity 0.2s, transform 0.2s;
+        }
+        .queue-item.dragging { opacity: 0.4; }
+        .queue-item.drag-over { border: 1px dashed var(--success); }
+        .queue-item .item-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        .queue-item .drag-handle {
+            color: var(--text-dim);
+            margin-right: 8px;
+            font-size: 1rem;
+            cursor: grab;
         }
         .queue-item .info { flex: 1; }
+        .queue-item .expand-btn {
+            background: none;
+            border: none;
+            color: var(--text-dim);
+            font-size: 0.9rem;
+            cursor: pointer;
+            padding: 4px 8px;
+            transition: transform 0.2s;
+        }
+        .queue-item .expand-btn.expanded { transform: rotate(90deg); }
         .queue-item .status-badge {
             font-size: 0.75rem;
             padding: 2px 8px;
@@ -195,6 +234,16 @@
             cursor: pointer;
             padding: 4px 8px;
         }
+        .queue-item .item-details {
+            display: none;
+            margin-top: 8px;
+            padding: 8px;
+            background: var(--surface);
+            border-radius: 6px;
+            font-size: 0.8rem;
+            color: var(--text-dim);
+        }
+        .queue-item .item-details.show { display: block; }
         .queue-empty {
             color: var(--text-dim);
             font-size: 0.85rem;
@@ -224,6 +273,22 @@
             font-size: 0.85rem;
         }
         .form-row input[type="number"] { max-width: 70px; }
+        .form-check {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 8px;
+        }
+        .form-check input[type="checkbox"] {
+            width: 18px;
+            height: 18px;
+            accent-color: var(--warning);
+        }
+        .form-check label {
+            font-size: 0.85rem;
+            color: var(--text);
+            cursor: pointer;
+        }
         .btn-add {
             width: 100%;
             padding: 10px;
@@ -252,6 +317,7 @@
         <div class="no-image">Tap to capture screenshot</div>
     </div>
     <div class="screenshot-controls">
+        <button class="btn-auto-battle" id="btnAutoBattle" onclick="startAutoBattle()">⚔ Auto Battle</button>
         <button class="btn-live" id="btnLive" onclick="toggleLive()">● Live</button>
     </div>
 
@@ -291,6 +357,10 @@
             <label>Repeat</label>
             <input type="number" id="inputCount" value="1" min="1" max="999">
         </div>
+        <div class="form-check">
+            <input type="checkbox" id="chkNormalAttack">
+            <label for="chkNormalAttack">仅使用普通攻击</label>
+        </div>
         <button class="btn-add" onclick="addToQueue()">+ Add to Queue</button>
     </div>
 
@@ -303,6 +373,7 @@ let ws = null;
 let catalog = null;
 let state = { active: null, pending: [], running: false };
 let liveInterval = null;
+let autoBattleActive = false;
 
 // Back link visibility
 (function() {
@@ -353,6 +424,14 @@ function handleEvent(msg) {
             }
             render();
             break;
+        case 'auto_battle_started':
+            autoBattleActive = true;
+            render();
+            break;
+        case 'auto_battle_finished':
+            autoBattleActive = false;
+            render();
+            break;
     }
 }
 
@@ -361,6 +440,7 @@ function render() {
     renderActive();
     renderPending();
     renderButton();
+    renderAutoBattle();
 }
 
 function renderActive() {
@@ -392,24 +472,34 @@ function renderPending() {
         el.innerHTML = '<li class="queue-empty">No tasks in queue</li>';
         return;
     }
-    el.innerHTML = state.pending.map(task => {
+    el.innerHTML = state.pending.map((task, idx) => {
         const desc = describeTask(task);
-        return `<li class="queue-item">
-            <span class="info">${desc}</span>
-            <span class="status-badge pending">Pending</span>
-            <button class="remove-btn" onclick="removeFromQueue('${task.id}')">🗑</button>
+        const details = describeTaskDetails(task);
+        return `<li class="queue-item" draggable="true" data-id="${task.id}" data-idx="${idx}">
+            <div class="item-header">
+                <span class="drag-handle">≡</span>
+                <span class="info">${desc}</span>
+                <span class="status-badge pending">Pending</span>
+                <button class="expand-btn" onclick="toggleExpand(this)">▸</button>
+                <button class="remove-btn" onclick="removeFromQueue('${task.id}')">🗑</button>
+            </div>
+            <div class="item-details">${details}</div>
         </li>`;
     }).join('');
+    setupDragAndDrop();
 }
 
 function renderButton() {
     const btn = document.getElementById('btnControl');
-    if (state.active && state.active.status === 'active') {
+    if (autoBattleActive) {
+        btn.className = 'btn-control start';
+        btn.textContent = '▶ Start';
+        btn.disabled = true;
+    } else if (state.active && state.active.status === 'active') {
         btn.className = 'btn-control cancel';
         btn.textContent = '✕ Cancel';
         btn.disabled = false;
     } else if ((state.pending && state.pending.length > 0) || (state.active && state.active.status !== 'active')) {
-        // Has pending work, or cancelled task to clear
         btn.className = 'btn-control start';
         btn.textContent = '▶ Start';
         btn.disabled = !(state.pending && state.pending.length > 0);
@@ -471,18 +561,18 @@ async function addToQueue() {
     if (!sel.value) return;
     const quest = JSON.parse(sel.value);
     const count = parseInt(document.getElementById('inputCount').value) || 1;
+    const normalAttackOnly = document.getElementById('chkNormalAttack').checked;
     try {
+        const params = {
+            quests: [{ quest, count }],
+            apple_total: 0,
+            apple_kind: 'gold',
+        };
+        if (normalAttackOnly) params.normal_attack_only = true;
         await fetch(`${API}/api/queue`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                type: 'operation',
-                params: {
-                    quests: [{ quest, count }],
-                    apple_total: 0,
-                    apple_kind: 'gold',
-                }
-            })
+            body: JSON.stringify({ type: 'operation', params })
         });
         await fetchState();
     } catch (e) {
@@ -547,6 +637,103 @@ function toggleLive() {
         btn.classList.add('active');
         takeScreenshot();
         liveInterval = setInterval(takeScreenshot, 2000);
+    }
+}
+
+// --- Auto Battle ---
+function renderAutoBattle() {
+    const btn = document.getElementById('btnAutoBattle');
+    if (autoBattleActive) {
+        btn.className = 'btn-auto-battle active';
+        btn.textContent = '⚔ Running...';
+        btn.disabled = true;
+    } else {
+        btn.className = 'btn-auto-battle';
+        btn.textContent = '⚔ Auto Battle';
+        btn.disabled = !!(state.active && state.active.status === 'active');
+    }
+}
+
+async function startAutoBattle() {
+    try {
+        await fetch(`${API}/api/control/auto-battle`, { method: 'POST' });
+    } catch (e) {
+        console.error('Auto battle error:', e);
+    }
+}
+
+// --- Expandable items ---
+function toggleExpand(btn) {
+    btn.classList.toggle('expanded');
+    const details = btn.closest('.queue-item').querySelector('.item-details');
+    details.classList.toggle('show');
+}
+
+function describeTaskDetails(task) {
+    if (task.type === 'operation' && task.params) {
+        const lines = [];
+        if (task.params.quests) {
+            task.params.quests.forEach(q => {
+                const name = findQuestName(q.quest) || q.quest.join('-');
+                lines.push(`Quest: ${name} ×${q.count}`);
+            });
+        }
+        if (task.params.normal_attack_only) lines.push('仅使用普通攻击: ✓');
+        if (task.params.apple_total) lines.push(`Apples: ${task.params.apple_total} (${task.params.apple_kind || 'gold'})`);
+        return lines.join('<br>') || 'No details';
+    }
+    if (task.type === 'battle') return 'One-off battle';
+    return task.type;
+}
+
+// --- Drag and Drop ---
+let dragSrcId = null;
+
+function setupDragAndDrop() {
+    const items = document.querySelectorAll('.queue-item[draggable]');
+    items.forEach(item => {
+        item.addEventListener('dragstart', e => {
+            dragSrcId = item.dataset.id;
+            item.classList.add('dragging');
+            e.dataTransfer.effectAllowed = 'move';
+        });
+        item.addEventListener('dragend', () => {
+            item.classList.remove('dragging');
+            document.querySelectorAll('.queue-item.drag-over').forEach(el => el.classList.remove('drag-over'));
+        });
+        item.addEventListener('dragover', e => {
+            e.preventDefault();
+            e.dataTransfer.dropEffect = 'move';
+            if (item.dataset.id !== dragSrcId) item.classList.add('drag-over');
+        });
+        item.addEventListener('dragleave', () => {
+            item.classList.remove('drag-over');
+        });
+        item.addEventListener('drop', e => {
+            e.preventDefault();
+            item.classList.remove('drag-over');
+            if (item.dataset.id === dragSrcId) return;
+            reorderQueue(dragSrcId, item.dataset.id);
+        });
+    });
+}
+
+async function reorderQueue(fromId, beforeId) {
+    const ids = state.pending.map(t => t.id);
+    const fromIdx = ids.indexOf(fromId);
+    if (fromIdx === -1) return;
+    ids.splice(fromIdx, 1);
+    const toIdx = ids.indexOf(beforeId);
+    ids.splice(toIdx, 0, fromId);
+    try {
+        await fetch(`${API}/api/queue/reorder`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ids })
+        });
+        await fetchState();
+    } catch (e) {
+        console.error('Reorder error:', e);
     }
 }
 
