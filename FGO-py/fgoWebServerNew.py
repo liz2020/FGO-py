@@ -201,6 +201,12 @@ class SwipeRequest(BaseModel):
     duration: int = 300
 
 
+class HoldRequest(BaseModel):
+    x: int
+    y: int
+    duration: int = 1000
+
+
 @app.post("/api/control/manual")
 async def toggle_manual(req: ManualModeRequest):
     global _manual_mode
@@ -231,6 +237,28 @@ async def input_swipe(req: SwipeRequest):
     await asyncio.to_thread(
         fgoDevice.device.I.swipe, (req.x1, req.y1), (req.x2, req.y2), req.duration
     )
+    return {"ok": True}
+
+
+@app.post("/api/input/hold")
+async def input_hold(req: HoldRequest):
+    if not fgoDevice.device.available:
+        raise HTTPException(503, "Device not available")
+
+    def _hold():
+        import ctypes, time
+        user32 = ctypes.windll.user32
+        dev = fgoDevice.device.I
+        x = int(req.x * dev._scale_x)
+        y = int(req.y * dev._scale_y)
+        lparam = x | (y << 16)
+        user32.PostMessageW(dev._render_hwnd, dev.WM_MOUSEMOVE, 0, lparam)
+        time.sleep(0.01)
+        user32.PostMessageW(dev._render_hwnd, dev.WM_LBUTTONDOWN, dev.MK_LBUTTON, lparam)
+        time.sleep(req.duration / 1000.0)
+        user32.PostMessageW(dev._render_hwnd, dev.WM_LBUTTONUP, 0, lparam)
+
+    await asyncio.to_thread(_hold)
     return {"ok": True}
 
 

@@ -907,13 +907,22 @@ function onPointerUp(e) {
     const dist = Math.sqrt(dx * dx + dy * dy);
 
     const [gx1, gy1] = imgToGame(pointerState.x, pointerState.y);
-    if (dist < 10) {
+    if (dist < 10 && dt >= 500) {
+        // Long hold
+        fetch(`${API}/api/input/hold`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({x: gx1, y: gy1, duration: dt})
+        }).catch(e => console.error('Hold error:', e));
+    } else if (dist < 10) {
+        // Tap
         fetch(`${API}/api/input/tap`, {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({x: gx1, y: gy1})
         }).catch(e => console.error('Tap error:', e));
     } else {
+        // Swipe
         const [gx2, gy2] = imgToGame(e.offsetX, e.offsetY);
         const duration = Math.max(100, Math.min(2000, dt));
         fetch(`${API}/api/input/swipe`, {
