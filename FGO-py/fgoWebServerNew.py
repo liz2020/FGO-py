@@ -244,8 +244,8 @@ async def screenshot():
     if not fgoDevice.device.available:
         logger.warning("Screenshot request failed: device not available")
         raise HTTPException(503, "Device not available")
-    # Use raw screenshot — bypass Detect() which calls schedule.sleep/checkStop
-    img = fgoDevice.device.screenshot()
+    # Run in thread to avoid blocking event loop (important for concurrent WS clients)
+    img = await asyncio.to_thread(fgoDevice.device.screenshot)
     _, buf = cv2.imencode('.jpg', img, [cv2.IMWRITE_JPEG_QUALITY, 80])
     return {"image": base64.b64encode(buf.tobytes()).decode()}
 
