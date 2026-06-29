@@ -122,7 +122,7 @@ class TaskQueue:
                 # Queue empty — go idle
                 self._running = False
                 self._has_work.clear()
-            self._broadcast({"event": "queue_idle"})
+            self._broadcast({"event": "queue_idle", "state": self.get_state()})
 
     def subscribe(self, callback: Callable):
         self._subscribers.append(callback)
@@ -152,7 +152,7 @@ class TaskWorker(threading.Thread):
             self.queue._current = task
             task.status = "active"
             task.started_at = time.time()
-            self.queue._broadcast({"event": "task_started", "task": task.to_dict()})
+            self.queue._broadcast({"event": "task_started", "task": task.to_dict(), "state": self.queue.get_state()})
 
             try:
                 schedule.reset()

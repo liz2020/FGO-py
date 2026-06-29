@@ -1,20 +1,10 @@
-"""Quest catalog — parses i18n files and cross-references with fgoReishift.place."""
+"""Quest catalog — parses i18n files and uses fgoMetadata.quest for proper tuples."""
 import xml.etree.ElementTree as ET
 from pathlib import Path
-from fgoReishift import place
+from fgoMetadata import quest as quest_tuples
 from fgoLogging import getLogger
 
 logger = getLogger('QuestCatalog')
-
-# Part groupings: maps part index to human key
-PARTS = {
-    0: "daily",    # 迦勒底之门
-    1: "part1",    # Part 1
-    2: "part1.5",  # Epic of Remnant
-    3: "part2",    # Cosmos in the Lostbelt
-    4: "part2.5",  # Ordeal Call prelude chapters
-    5: "ordeal",   # Ordeal Call / 平面之月
-}
 
 
 def _parse_i18n(lang: str = "zh") -> dict[str, str]:
@@ -39,17 +29,11 @@ def _parse_i18n(lang: str = "zh") -> dict[str, str]:
     return names
 
 
-def _get_navigable_quests() -> set[tuple]:
-    """Get the set of quest tuples that have navigation entries in fgoReishift.place."""
-    result = set()
-    for key in place:
-        if isinstance(key, tuple):
-            result.add(key)
-    return result
-
-
 def build_catalog(lang: str = "zh") -> dict:
     """Build structured quest catalog for the web UI.
+
+    Uses the full quest tuples from fgoMetadata.quest (typically 4-element)
+    which match what fgoKernel.goto/reishift expect for proper navigation.
 
     Returns:
         {
@@ -62,7 +46,7 @@ def build_catalog(lang: str = "zh") -> dict:
                             "id": "1-0",
                             "name": "冬木",
                             "quests": [
-                                {"id": "1-0-0", "name": "未确认坐标X-A", "tuple": [1,0,0]},
+                                {"id": "1-0-0-0", "name": "未确认坐标X-A", "tuple": [1,0,0,0]},
                                 ...
                             ]
                         }
@@ -72,11 +56,10 @@ def build_catalog(lang: str = "zh") -> dict:
         }
     """
     names = _parse_i18n(lang)
-    navigable = _get_navigable_quests()
 
-    # Group navigable quests by (part, chapter)
+    # Group quests by (part, chapter) using full tuples from fgoMetadata
     chapters_map: dict[tuple[int, int], list[tuple]] = {}
-    for q in navigable:
+    for q in quest_tuples:
         if len(q) >= 3:
             key = (q[0], q[1])
             chapters_map.setdefault(key, []).append(q)
@@ -98,12 +81,12 @@ def build_catalog(lang: str = "zh") -> dict:
             chapter_name = names.get(chapter_key, f"Chapter {c}")
 
             quests = []
-            quest_tuples = sorted(chapters_map[(p, c)], key=lambda q: q[2])
-            for qt in quest_tuples:
-                quest_key = "-".join(str(x) for x in qt) + "-0"
-                quest_name = names.get(quest_key, f"Quest {qt[-1]}")
+            quest_list = sorted(chapters_map[(p, c)], key=lambda q: q[2:])
+            for qt in quest_list:
+                quest_key = "-".join(str(x) for x in qt)
+                quest_name = names.get(quest_key, f"Quest {qt[2]}")
                 quests.append({
-                    "id": "-".join(str(x) for x in qt),
+                    "id": quest_key,
                     "name": quest_name,
                     "tuple": list(qt),
                 })

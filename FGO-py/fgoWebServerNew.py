@@ -22,6 +22,8 @@ logger = getLogger('WebNew')
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    global _loop
+    _loop = asyncio.get_running_loop()
     # Start the task worker thread
     task_worker.start()
     logger.info("Task worker started")
@@ -39,44 +41,37 @@ app.mount("/static", StaticFiles(directory=str(static_path)), name="static")
 
 class ConnectionManager:
     def __init__(self):
-        self.active: list[WebSocket] = []
+        self.active: list[tuple[WebSocket, asyncio.Queue]] = []
 
     async def connect(self, websocket: WebSocket):
         await websocket.accept()
-        self.active.append(websocket)
+        queue = asyncio.Queue()
+        self.active.append((websocket, queue))
+        return queue
 
     def disconnect(self, websocket: WebSocket):
-        self.active.remove(websocket)
+        self.active = [(ws, q) for ws, q in self.active if ws is not websocket]
 
-    async def broadcast(self, message: dict):
-        data = json.dumps(message, ensure_ascii=False)
-        for ws in self.active[:]:
-            try:
-                await ws.send_text(data)
-            except Exception:
-                self.active.remove(ws)
+    def enqueue(self, message: dict):
+        """Thread-safe: put message into all connected clients' queues."""
+        for _, queue in self.active[:]:
+            queue.put_nowait(message)
 
 
 ws_manager = ConnectionManager()
 
-# Bridge: task_queue broadcasts sync events → async WebSocket push
+# Bridge: task_queue broadcasts sync events → ConnectionManager queues
 _loop: asyncio.AbstractEventLoop | None = None
 
 
 def _on_task_event(event: dict):
-    """Called from worker thread; schedules async broadcast."""
+    """Called from worker thread; thread-safely enqueues event for all WebSocket clients."""
     loop = _loop
     if loop and loop.is_running():
-        loop.call_soon_threadsafe(asyncio.ensure_future, ws_manager.broadcast(event))
+        loop.call_soon_threadsafe(ws_manager.enqueue, event)
 
 
 task_queue.subscribe(_on_task_event)
-
-
-@app.on_event("startup")
-async def _capture_loop():
-    global _loop
-    _loop = asyncio.get_running_loop()
 
 
 # --- Pydantic models ---
@@ -115,7 +110,7 @@ async def add_task(req: AddTaskRequest):
     task = Task(type=req.type, params=req.params)
     task_queue.add(task)
     state = task_queue.get_state()
-    await ws_manager.broadcast({"event": "state_updated", "state": state})
+    ws_manager.enqueue({"event": "state_updated", "state": state})
     return {"id": task.id, "task": task.to_dict()}
 
 
@@ -124,7 +119,7 @@ async def remove_task(task_id: str):
     if not task_queue.remove(task_id):
         raise HTTPException(404, "Task not found in queue")
     state = task_queue.get_state()
-    await ws_manager.broadcast({"event": "state_updated", "state": state})
+    ws_manager.enqueue({"event": "state_updated", "state": state})
     return {"ok": True}
 
 
@@ -132,7 +127,7 @@ async def remove_task(task_id: str):
 async def control_start():
     task_queue.start()
     state = task_queue.get_state()
-    await ws_manager.broadcast({"event": "state_updated", "state": state})
+    ws_manager.enqueue({"event": "state_updated", "state": state})
     return {"ok": True}
 
 
@@ -161,17 +156,26 @@ async def screenshot():
 
 @app.websocket("/ws/status")
 async def ws_status(websocket: WebSocket):
-    await ws_manager.connect(websocket)
+    queue = await ws_manager.connect(websocket)
     try:
         # Send current state on connect
         await websocket.send_json({
             "event": "state_updated",
             "state": task_queue.get_state(),
         })
-        # Keep alive — client can send pings
-        while True:
-            await websocket.receive_text()
-    except WebSocketDisconnect:
+
+        # Two concurrent tasks: read from queue (push to client) + keep-alive (read from client)
+        async def _sender():
+            while True:
+                msg = await queue.get()
+                await websocket.send_text(json.dumps(msg, ensure_ascii=False))
+
+        async def _receiver():
+            while True:
+                await websocket.receive_text()
+
+        await asyncio.gather(_sender(), _receiver())
+    except (WebSocketDisconnect, Exception):
         ws_manager.disconnect(websocket)
 
 
