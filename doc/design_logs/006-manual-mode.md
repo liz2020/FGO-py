@@ -158,7 +158,7 @@ Live mode polls `POST /api/screenshot` every 2000ms via `setInterval`.
 
 ### Manual Mode Behavior
 
-Switch to ~33ms interval (30 FPS). This is acceptable because:
+Switch to ~100ms interval (10 FPS). This balances smoothness with emulator performance:
 - Screenshots are taken via shared-memory LDOpenGL DLL — very fast (~2-5ms)
 - JPEG encoding at quality 80 for 1280×720 is ~5-10ms
 - Network is localhost

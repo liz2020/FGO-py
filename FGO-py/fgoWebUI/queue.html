@@ -845,7 +845,7 @@ function enableManualPreview() {
     const btn = document.getElementById('btnLive');
     btn.classList.add('active');
     takeScreenshot();
-    liveInterval = setInterval(takeScreenshot, 33);
+    liveInterval = setInterval(takeScreenshot, 100);
     // Attach pointer handlers
     attachPointerHandlers();
 }
