@@ -102,6 +102,7 @@
             color: var(--success);
             background: rgba(78, 204, 163, 0.1);
         }
+        .btn-live:disabled { opacity: 0.4; cursor: not-allowed; }
         .btn-auto-battle {
             padding: 4px 12px;
             border-radius: 6px;
@@ -703,6 +704,7 @@ function onChapterChange() {
 
 // --- Live screenshot toggle ---
 function toggleLive() {
+    if (manualMode) return;  // Can't turn off live during manual mode
     const btn = document.getElementById('btnLive');
     if (liveActive) {
         stopLive();
@@ -726,11 +728,7 @@ function stopLive() {
 // --- Auto Battle ---
 function renderAutoBattle() {
     const btn = document.getElementById('btnAutoBattle');
-    if (manualMode) {
-        btn.className = 'btn-auto-battle';
-        btn.textContent = '⚔ Auto Battle';
-        btn.disabled = true;
-    } else if (autoBattleActive) {
+    if (autoBattleActive) {
         btn.className = 'btn-auto-battle active';
         btn.textContent = '⚔ Cancel';
         btn.disabled = false;
@@ -750,6 +748,14 @@ async function startAutoBattle() {
             console.error('Cancel auto battle error:', e);
         }
     } else {
+        // Exit manual mode first if active
+        if (manualMode) {
+            await fetch(`${API}/api/control/manual`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({active: false})
+            });
+        }
         try {
             await fetch(`${API}/api/control/auto-battle`, { method: 'POST' });
         } catch (e) {
@@ -847,6 +853,9 @@ function renderManual() {
     const btn = document.getElementById('btnManual');
     btn.className = manualMode ? 'btn-manual active' : 'btn-manual';
     btn.textContent = manualMode ? '🖐 Manual ON' : '🖐 Manual';
+    // Live button can't be toggled off during manual mode
+    const btnLive = document.getElementById('btnLive');
+    btnLive.disabled = manualMode;
 }
 
 async function toggleManual() {
