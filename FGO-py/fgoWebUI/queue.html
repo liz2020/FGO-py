@@ -67,6 +67,10 @@
             width: 100%;
             height: 100%;
             object-fit: contain;
+            -webkit-touch-callout: none;
+            -webkit-user-select: none;
+            user-select: none;
+            pointer-events: none;
         }
         .screenshot-container .no-image {
             display: flex;
@@ -938,6 +942,7 @@ function attachPointerHandlers() {
     const box = document.getElementById('screenshotBox');
     box.addEventListener('pointerdown', onPointerDown);
     box.addEventListener('pointerup', onPointerUp);
+    box.addEventListener('contextmenu', preventContext);
     // Prevent default click (takeScreenshot) in manual mode
     box.removeAttribute('onclick');
 }
@@ -946,8 +951,11 @@ function detachPointerHandlers() {
     const box = document.getElementById('screenshotBox');
     box.removeEventListener('pointerdown', onPointerDown);
     box.removeEventListener('pointerup', onPointerUp);
+    box.removeEventListener('contextmenu', preventContext);
     box.setAttribute('onclick', 'takeScreenshot()');
 }
+
+function preventContext(e) { e.preventDefault(); }
 
 // --- Init ---
 connectWS();
