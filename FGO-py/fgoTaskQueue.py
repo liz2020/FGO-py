@@ -37,7 +37,13 @@ def configure_progress(emu_manager_url: str, instance_index: int):
 
 
 def _report_progress(current: int, total: int, status: str = "running", detail: str = ""):
-    """Report farming progress to emu manager (fire-and-forget)."""
+    """Report farming progress to emu manager and broadcast to WebSocket clients."""
+    # Update active task's progress for local WebSocket clients
+    if task_queue._current and task_queue._current.status == "active":
+        task_queue._current.progress = {"current": current, "total": total, "detail": detail}
+        task_queue._broadcast({"event": "task_progress", "progress": {"current": current, "total": total, "detail": detail}})
+
+    # Report to emu manager
     if not _emu_manager_url:
         return
     try:
@@ -66,6 +72,7 @@ class Task:
     params: dict = field(default_factory=dict)
     status: str = "pending"  # "pending" | "active" | "cancelled" | "error"
     result: dict | None = None
+    progress: dict | None = None  # {current, total, detail}
     created_at: float = field(default_factory=time.time)
     started_at: float | None = None
     finished_at: float | None = None

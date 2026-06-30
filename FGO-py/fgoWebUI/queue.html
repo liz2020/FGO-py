@@ -452,7 +452,8 @@ let autoBattleActive = false;
 let manualMode = false;
 let preManualLiveState = false;
 let pointerState = null;
-let expandedIds = new Set();  // track expanded task IDs across re-renders
+let expandedIds = new Set(['active']);  // active task expanded by default
+let activeProgress = null;  // {current, total, detail}
 
 // Back link visibility
 (function() {
@@ -512,12 +513,14 @@ function handleEvent(msg) {
             if (msg.state) {
                 state = msg.state;
             }
+            activeProgress = null;
             render();
             break;
         case 'task_started':
             if (msg.state) {
                 state = msg.state;
             }
+            activeProgress = null;
             // Stop live when emulator is being shut down
             if (msg.task && msg.task.type === 'stop_emulator' && liveActive) {
                 stopLive();
@@ -529,12 +532,17 @@ function handleEvent(msg) {
             if (msg.state) {
                 state = msg.state;
             }
+            activeProgress = null;
             // Resume live when emulator has started
             if (msg.task && msg.task.type === 'start_emulator' && msg.task.status === 'done' && !liveActive) {
                 startLive();
                 document.getElementById('btnLive').classList.add('active');
             }
             render();
+            break;
+        case 'task_progress':
+            activeProgress = msg.progress;
+            renderActiveProgress();
             break;
         case 'auto_battle_started':
             autoBattleActive = true;
@@ -570,27 +578,54 @@ function renderActive() {
     if (state.active) {
         const desc = describeTask(state.active);
         const details = describeTaskDetails(state.active);
-        const expanded = expandedIds.has('active');
+        // Active task is always expanded
+        expandedIds.add('active');
+        const progressBar = renderProgressBar(activeProgress);
         const st = state.active.status;
         if (st === 'active') {
             el.innerHTML = `<div class="active-task">
                 <span class="info">${desc}</span>
                 <span class="status-badge">Running</span>
-                <button class="expand-btn${expanded ? ' expanded' : ''}" onclick="toggleExpand(this, 'active')">▸</button>
+                <button class="expand-btn expanded" onclick="toggleExpand(this, 'active')">▸</button>
             </div>
-            <div class="item-details${expanded ? ' show' : ''}">${details}</div>`;
+            <div class="item-details show">${progressBar}${details}</div>`;
         } else {
             const label = st === 'error' ? 'Error' : 'Cancelled';
             el.innerHTML = `<div class="active-task" style="border-color: var(--primary);">
                 <span class="info">${desc}</span>
                 <span class="status-badge" style="background: rgba(233,69,96,0.2); color: var(--primary);">${label}</span>
-                <button class="expand-btn${expanded ? ' expanded' : ''}" onclick="toggleExpand(this, 'active')">▸</button>
+                <button class="expand-btn expanded" onclick="toggleExpand(this, 'active')">▸</button>
             </div>
-            <div class="item-details${expanded ? ' show' : ''}">${details}</div>`;
+            <div class="item-details show">${details}</div>`;
         }
     } else {
+        activeProgress = null;
         el.innerHTML = '<div class="active-empty">No active task</div>';
     }
+}
+
+function renderActiveProgress() {
+    // Update just the progress bar without full re-render (avoids flicker)
+    const detailsEl = document.querySelector('#activeSlot .item-details');
+    if (!detailsEl) return;
+    const bar = detailsEl.querySelector('.progress-wrap');
+    const newBar = renderProgressBar(activeProgress);
+    if (bar) {
+        bar.outerHTML = newBar;
+    } else if (newBar) {
+        detailsEl.insertAdjacentHTML('afterbegin', newBar);
+    }
+}
+
+function renderProgressBar(progress) {
+    if (!progress || !progress.total) return '';
+    const pct = Math.round((progress.current / progress.total) * 100);
+    return `<div class="progress-wrap" style="margin-bottom:8px;">
+        <div style="background:rgba(255,255,255,0.08);border-radius:6px;height:20px;position:relative;overflow:hidden;">
+            <div style="background:var(--success);height:100%;border-radius:6px;width:${pct}%;transition:width 0.5s ease;"></div>
+            <span style="position:absolute;top:0;left:0;right:0;bottom:0;display:flex;align-items:center;justify-content:center;font-size:0.75rem;font-weight:600;">${progress.current}/${progress.total} ${progress.detail || ''}</span>
+        </div>
+    </div>`;
 }
 
 function renderPending() {
