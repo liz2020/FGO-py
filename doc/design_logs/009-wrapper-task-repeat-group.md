@@ -41,7 +41,8 @@ A `loop` task's `params` contain:
 {
     "type": "loop",
     "params": {
-        "remaining": 3
+        "remaining": 3,
+        "infinite": false
     },
     "children": [
         {"type": "operation", "params": {"quests": [...]}},
@@ -50,13 +51,21 @@ A `loop` task's `params` contain:
 }
 ```
 
+- `remaining` — number of iterations left. Decremented each time the loop unfolds.
+- `infinite` — when `true`, the loop unfolds indefinitely and `remaining` is ignored (never checked or decremented). The only way to stop is cancel.
+
 ### Lifecycle
+
+When the worker pops a loop task:
+1. If `infinite` is `true` → always unfold (skip remaining check)
+2. Else if `remaining > 0` → unfold and decrement `remaining`
+3. Else (`remaining == 0` and not infinite) → discard the loop
 
 ```
 Queue state at start:
-  [ loop(remaining=3, children=[A, B]) ]
+  [ loop(remaining=3, infinite=false, children=[A, B]) ]
 
-Step 1 — Worker pops the loop task. remaining > 0, so:
+Step 1 — Worker pops the loop task. Not infinite, remaining > 0, so:
   - Copy children [A', B'] and insert them BEFORE the loop task
   - Decrement remaining → 2
   - Push the loop task back to front (after the copies)
@@ -149,9 +158,11 @@ if task is None:
 
 # Handle loop tasks: unfold one iteration
 if task.type == "loop":
+    infinite = task.params.get("infinite", False)
     remaining = task.params.get("remaining", 0)
-    if remaining > 0:
-        task.params["remaining"] = remaining - 1
+    if infinite or remaining > 0:
+        if not infinite:
+            task.params["remaining"] = remaining - 1
         # Deep-copy children with fresh IDs and insert before the loop
         import copy
         copies = []
@@ -170,7 +181,7 @@ if task.type == "loop":
         })
         continue  # Go back to pop_next(), which will get the first copy
     else:
-        # remaining == 0 → loop is done, discard it
+        # remaining == 0 and not infinite → loop is done, discard it
         self.queue._broadcast({
             "event": "state_updated",
             "state": self.queue.get_state(),
@@ -200,7 +211,7 @@ def to_dict(self):
 POST /api/queue
 {
     "type": "loop",
-    "params": {"remaining": 3},
+    "params": {"remaining": 3, "infinite": false},
     "children": [
         {"type": "operation", "params": {"quests": [{"quest": [1,0,3,0], "count": 5}]}},
         {"type": "wait", "params": {"minutes": 120}}
@@ -209,7 +220,7 @@ POST /api/queue
 ```
 
 The server validates:
-- `remaining` ≥ 1
+- `remaining` ≥ 1 (unless `infinite` is `true`, in which case `remaining` is ignored)
 - `children` is non-empty
 - Each child has a valid task type (no nested loops — see Open Questions)
 
@@ -221,7 +232,17 @@ Two new endpoints:
 |--------|------|-------------|
 | POST | `/api/queue/{loop_id}/add-child` | Move a pending task into the loop's children |
 | POST | `/api/queue/{loop_id}/remove-child` | Remove a child from the loop and put it back in the main queue |
-| PATCH | `/api/queue/{loop_id}` | Update `remaining` count |
+| PATCH | `/api/queue/{loop_id}` | Update `remaining` and/or `infinite` flag |
+
+The `PATCH` endpoint accepts:
+
+```json
+{"remaining": 5}
+{"infinite": true}
+{"remaining": 10, "infinite": false}
+```
+
+This works even while the loop is sitting in the queue mid-execution. Changes take effect on the *next* unfold.
 
 #### Moving tasks into a loop
 
@@ -255,35 +276,49 @@ This is consistent with existing cancel behavior — the queue state is preserve
 
 #### Queue List Rendering
 
-Loop tasks render as a collapsible group in the queue:
+Loop tasks render as a collapsible group with **inline controls** for adjusting the repeat count and toggling infinite mode — even while the loop is queued:
 
 ```
-┌─ Queue ───────────────────────────────┐
-│ 1. Farm 冬木 ×5                 [🗑]  │  ← normal task
-│                                       │
-│ 2. 🔁 Loop ×3                  [🗑]  │  ← loop wrapper
-│    ├─ Farm 雅戈泰 ×10                 │
-│    └─ Wait 120 min                    │
-│                                       │
-│ 3. Stop Emulator                [🗑]  │  ← normal task
-└───────────────────────────────────────┘
+┌─ Queue ───────────────────────────────────────────┐
+│ 1. Farm 冬木 ×5                            [🗑]  │
+│                                                   │
+│ 2. 🔁 Loop  [−] 3 [+]  ☐ Infinite         [🗑]  │
+│    ├─ Farm 雅戈泰 ×10                             │
+│    └─ Wait 120 min                                │
+│                                                   │
+│ 3. Stop Emulator                           [🗑]  │
+└───────────────────────────────────────────────────┘
+```
+
+- **`[−]` / `[+]`** buttons call `PATCH /api/queue/{id}` with `remaining ± 1` (min 1).
+- **`☐ Infinite`** checkbox calls `PATCH /api/queue/{id}` with `{"infinite": true/false}`.
+- When infinite is checked, the `[−] N [+]` controls are **dimmed/disabled** (remaining is irrelevant).
+
+When infinite is active:
+
+```
+│ 2. 🔁 Loop  [−] — [+]  ☑ Infinite         [🗑]  │
+│    ├─ Farm 雅戈泰 ×10                             │
+│    └─ Wait 120 min                                │
 ```
 
 When a loop is unfolded and running, the queue shows both the unfolded copies and the remaining loop:
 
 ```
-┌─ Queue ───────────────────────────────┐
-│ ▶ Farm 雅戈泰 ×10         [active]   │  ← unfolded copy (executing)
-│                                       │
-│ 1. Wait 120 min              [🗑]    │  ← unfolded copy
-│                                       │
-│ 2. 🔁 Loop ×2 remaining      [🗑]   │  ← loop, decremented
-│    ├─ Farm 雅戈泰 ×10                │
-│    └─ Wait 120 min                   │
-│                                       │
-│ 3. Stop Emulator              [🗑]   │
-└───────────────────────────────────────┘
+┌─ Queue ───────────────────────────────────────────┐
+│ ▶ Farm 雅戈泰 ×10                      [active]  │  ← unfolded copy (executing)
+│                                                   │
+│ 1. Wait 120 min                           [🗑]   │  ← unfolded copy
+│                                                   │
+│ 2. 🔁 Loop  [−] 2 [+]  ☐ Infinite        [🗑]   │  ← loop, decremented
+│    ├─ Farm 雅戈泰 ×10                             │
+│    └─ Wait 120 min                                │
+│                                                   │
+│ 3. Stop Emulator                          [🗑]   │
+└───────────────────────────────────────────────────┘
 ```
+
+The `[−] / [+]` controls remain interactive even during execution, so the user can increase or decrease iterations on the fly.
 
 #### "Add Loop" UI
 
@@ -294,16 +329,16 @@ Add a "wrap as loop" action. The user can:
 2. **Wrap selected tasks**: Multi-select pending tasks → "Wrap in loop" button → prompts for repeat count → creates a loop containing those tasks.
 
 ```
-┌─ Add Task ────────────────────────────┐
-│ Task Type  [Loop (Repeat Group) ▾]    │
-│                                       │
-│ Repeat Count: [3  ]                   │
-│                                       │
-│ ℹ Add tasks to the loop after         │
-│   creating it by dragging them in.    │
-│                                       │
-│ [        + Add to Queue             ] │
-└───────────────────────────────────────┘
+┌─ Add Task ──────────────────────────────┐
+│ Task Type  [Loop (Repeat Group) ▾]      │
+│                                         │
+│ Repeat:  [−] 3 [+]    ☐ Infinite       │
+│                                         │
+│ ℹ Add tasks to the loop after           │
+│   creating it by dragging them in.      │
+│                                         │
+│ [        + Add to Queue               ] │
+└─────────────────────────────────────────┘
 ```
 
 #### describeTask for loop
@@ -312,8 +347,10 @@ Add a "wrap as loop" action. The user can:
 function describeTask(task) {
     if (task.type === 'loop') {
         const n = task.children ? task.children.length : 0;
+        const infinite = task.params.infinite;
         const rem = task.params.remaining || 0;
-        return `🔁 Loop ×${rem} (${n} tasks)`;
+        const label = infinite ? '∞' : `×${rem}`;
+        return `🔁 Loop ${label} (${n} tasks)`;
     }
     // ... existing cases
 }
@@ -322,7 +359,7 @@ function describeTask(task) {
 ## Edge Cases
 
 ### Loop with remaining=0 at creation
-Reject at API level — must be ≥ 1.
+Reject at API level — must be ≥ 1 (unless `infinite` is `true`, in which case `remaining` is irrelevant).
 
 ### All children removed from a loop
 If children is empty when the loop reaches the front, skip it (discard as no-op).
@@ -340,7 +377,7 @@ See §4 above. The partially-unfolded state is preservable and resumable.
 
 1. **Nested loops** — Should a loop be allowed to contain another loop? This enables complex schedules but adds complexity. **Recommendation**: Disallow for now. Validate at API level that children cannot be type `loop`.
 
-2. **Infinite loops** — Should `remaining` accept a sentinel value (e.g., -1) meaning "repeat forever until cancelled"? Useful for overnight farming. **Recommendation**: Yes, support `remaining: -1` as infinite. The only way to stop is cancel.
+2. ~~**Infinite loops**~~ — **Resolved**: `infinite` is a separate boolean flag in `params`. When `true`, the loop unfolds indefinitely and `remaining` is ignored. The UI exposes this as a checkbox next to the `[−] N [+]` counter. The only way to stop an infinite loop is cancel.
 
 3. **Editing children of a running loop** — If the loop has already unfolded once, editing its children affects only *future* iterations. The currently-unfolded copies are independent. This is intuitive but should be documented in the UI.
 
@@ -350,3 +387,5 @@ See §4 above. The partially-unfolded state is preservable and resumable.
    - **Recommendation**: Show current task progress as today, but add loop iteration info to the detail string: `冬木 ×10 (loop 2/3)`
 
 5. **Drag children into/out of loop** — Should the UI support drag-and-drop to move tasks between the main queue and a loop's children list? This is the most intuitive UX but requires more complex drag-and-drop handling. **Recommendation**: Support it as a Phase 2 UI enhancement. Phase 1 uses the API endpoints (add-child/remove-child buttons).
+
+6. **Live adjustment race condition** — The user adjusts `remaining` via `[−] / [+]` at the exact moment the worker pops the loop task. Since the PATCH endpoint and the worker both hold `_lock`, the update is atomic — whichever acquires the lock first wins. This is acceptable: the user sees the updated count immediately and the next unfold uses whatever value is current.
