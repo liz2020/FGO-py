@@ -233,7 +233,7 @@
             margin-bottom: 6px;
             font-size: 0.85rem;
         }
-        .queue-item .drag-handle { cursor: grab; }
+        .queue-item { cursor: grab; }
         .gu-mirror {
             opacity: 0.85;
             box-shadow: 0 4px 12px rgba(0,0,0,0.3);
@@ -255,12 +255,6 @@
             display: flex;
             align-items: center;
             justify-content: space-between;
-        }
-        .queue-item .drag-handle {
-            color: var(--text-dim);
-            margin-right: 8px;
-            font-size: 1rem;
-            cursor: grab;
         }
         .queue-item .info { flex: 1; }
         .queue-item .expand-btn {
@@ -290,19 +284,6 @@
             font-size: 1.1rem;
             cursor: pointer;
             padding: 4px 8px;
-        }
-        .queue-item .add-to-loop-btn {
-            background: none;
-            border: 1px solid rgba(46, 204, 113, 0.4);
-            color: var(--success);
-            font-size: 0.9rem;
-            cursor: pointer;
-            padding: 2px 6px;
-            border-radius: 4px;
-            margin-left: 6px;
-        }
-        .queue-item .add-to-loop-btn:hover {
-            background: rgba(46, 204, 113, 0.15);
         }
         .queue-item .item-details {
             display: none;
@@ -743,9 +724,6 @@ function renderPending() {
         el.innerHTML = '<li class="queue-empty">No tasks in queue</li>';
         return;
     }
-    // Check if there are any loops to show "add to loop" buttons
-    const loops = state.pending.filter(t => t.type === 'loop');
-
     el.innerHTML = state.pending.map((task, idx) => {
         if (task.type === 'loop') {
             return renderLoopItem(task, idx);
@@ -753,16 +731,10 @@ function renderPending() {
         const desc = describeTask(task);
         const details = describeTaskDetails(task);
         const expanded = expandedIds.has(task.id);
-        // Show "add to loop" button if loops exist
-        const addToLoopBtn = loops.length > 0
-            ? `<button class="add-to-loop-btn" onclick="addToFirstLoop('${task.id}')" title="Add to loop">⊕</button>`
-            : '';
         return `<li class="queue-item" data-id="${task.id}" data-idx="${idx}">
             <div class="item-header">
-                <span class="drag-handle">≡</span>
                 <span class="info">${desc}</span>
                 <span class="status-badge pending">Pending</span>
-                ${addToLoopBtn}
                 <button class="expand-btn${expanded ? ' expanded' : ''}" onclick="toggleExpand(this, '${task.id}')">▸</button>
                 <button class="remove-btn" onclick="removeFromQueue('${task.id}')">🗑</button>
             </div>
@@ -777,16 +749,21 @@ function renderLoopItem(task, idx) {
     const remaining = task.params.remaining || 0;
     const dimmed = infinite ? ' dimmed' : '';
     const children = task.children || [];
-    const childrenHtml = children.map(c =>
-        `<div class="loop-child-item queue-item" data-id="${c.id}" data-child-id="${c.id}">
-            <span class="drag-handle">≡</span>
-            <span>• ${describeTask(c)}</span>
-            <button class="remove-btn" onclick="removeChildFromLoop('${task.id}', '${c.id}')" style="font-size:0.8rem;padding:2px 4px;">✕</button>
-        </div>`
-    ).join('');
+    const childrenHtml = children.map(c => {
+        const childDesc = describeTask(c);
+        const childDetails = describeTaskDetails(c);
+        const childExpanded = expandedIds.has(c.id);
+        return `<div class="loop-child-item queue-item" data-id="${c.id}" data-child-id="${c.id}">
+            <div class="item-header">
+                <span class="info">• ${childDesc}</span>
+                <button class="expand-btn${childExpanded ? ' expanded' : ''}" onclick="toggleExpand(this, '${c.id}')">▸</button>
+                <button class="remove-btn" onclick="removeChildFromLoop('${task.id}', '${c.id}')" style="font-size:0.8rem;padding:2px 4px;">✕</button>
+            </div>
+            <div class="item-details${childExpanded ? ' show' : ''}">${childDetails}</div>
+        </div>`;
+    }).join('');
     return `<li class="queue-item" data-id="${task.id}" data-idx="${idx}">
         <div class="item-header">
-            <span class="drag-handle">≡</span>
             <span class="info">🔁 Loop</span>
             <span class="loop-controls${dimmed}">
                 <button onclick="adjustLoop('${task.id}', -1)" ${infinite || remaining <= 1 ? 'disabled' : ''}>−</button>
@@ -982,17 +959,6 @@ async function addChildToLoop(loopId, taskId) {
     }
 }
 
-async function addToFirstLoop(taskId) {
-    // If there's exactly one loop, add directly; otherwise let user pick
-    const loops = state.pending.filter(t => t.type === 'loop');
-    if (loops.length === 1) {
-        await addChildToLoop(loops[0].id, taskId);
-    } else if (loops.length > 1) {
-        // For now, add to the first loop. Could show a picker in the future.
-        await addChildToLoop(loops[0].id, taskId);
-    }
-}
-
 async function removeChildFromLoop(loopId, childId) {
     try {
         await fetch(`${API}/api/queue/${loopId}/remove-child`, {
@@ -1185,13 +1151,13 @@ function setupDragAndDrop() {
     // All containers: main list + each loop's children zone
     _drake = dragula([list, ...loopZones], {
         moves: function(el, source, handle) {
-            // Walk up from clicked element to find if a .drag-handle was clicked
+            // Allow drag from anywhere on the item EXCEPT buttons/inputs
             let node = handle;
             while (node && node !== el) {
-                if (node.classList && node.classList.contains('drag-handle')) return true;
+                if (node.tagName === 'BUTTON' || node.tagName === 'INPUT' || node.tagName === 'LABEL') return false;
                 node = node.parentElement;
             }
-            return false;
+            return el.classList.contains('queue-item') || el.classList.contains('loop-child-item');
         },
         accepts: function(el, target, source, sibling) {
             // Loop items cannot be dragged INTO another loop
