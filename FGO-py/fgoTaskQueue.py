@@ -342,20 +342,35 @@ class TaskWorker(threading.Thread):
         raise RuntimeError(f"Device not ready after {timeout}s")
 
     def _wait_and_reconnect(self, timeout: int = 120):
-        """Wait for emulator to boot, then reconnect the device."""
+        """Wait for emulator to boot, reconnect device, and verify screenshot works."""
         pending = getattr(fgoDevice, '_pending_device_name', None)
         if not pending:
             raise RuntimeError("No device name configured for reconnection")
         deadline = time.time() + timeout
+        # Phase 1: reconnect device
         while time.time() < deadline:
-            time.sleep(5)  # Use raw sleep (not schedule.sleep) to avoid stop check
+            time.sleep(5)
+            _report_progress(0, 0, "running", "Waiting for emulator...")
             try:
                 fgoDevice.device = fgoDevice.Device(pending)
                 logger.info("Device reconnected: %s", fgoDevice.device.name)
-                return
+                break
             except Exception:
                 continue
-        raise RuntimeError(f"Device not ready after {timeout}s")
+        else:
+            raise RuntimeError(f"Device not ready after {timeout}s")
+        # Phase 2: wait until screenshot succeeds
+        while time.time() < deadline:
+            _report_progress(0, 0, "running", "Waiting for screen...")
+            try:
+                img = fgoDevice.device.screenshot()
+                if img is not None and img.size > 0:
+                    logger.info("Screenshot verified — emulator fully ready")
+                    return
+            except Exception:
+                pass
+            time.sleep(3)
+        raise RuntimeError(f"Screenshot not available after {timeout}s")
 
 
 # Module-level singleton
