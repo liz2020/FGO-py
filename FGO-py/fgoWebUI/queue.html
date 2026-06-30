@@ -360,6 +360,7 @@
         }
         .loop-child-item {
             padding: 3px 0;
+            font-size: 0.85rem;
         }
         .loop-empty-hint {
             font-style: italic;
@@ -748,7 +749,7 @@ function renderLoopItem(task, idx) {
         return `<div class="loop-child-item queue-item" data-id="${c.id}" data-child-id="${c.id}">
             <div class="item-header">
                 <span class="info">• ${childDesc}</span>
-                <button class="remove-btn" onclick="removeChildFromLoop('${task.id}', '${c.id}')" style="font-size:0.8rem;padding:2px 4px;">✕</button>
+                <button class="remove-btn" onclick="removeChildFromLoop('${task.id}', '${c.id}')">✕</button>
                 <button class="expand-btn${childExpanded ? ' expanded' : ''}" onclick="toggleExpand(this, '${c.id}')">${childExpanded ? '▾ Details' : '▸ Details'}</button>
             </div>
             <div class="item-details${childExpanded ? ' show' : ''}">${childDetails}</div>
