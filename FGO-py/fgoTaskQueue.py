@@ -231,7 +231,8 @@ class TaskWorker(threading.Thread):
                 task.status = "cancelled"
                 task.result = {"error": str(e)}
                 task.finished_at = time.time()
-                _report_progress(0, 0, "cancelled", "Cancelled")
+                cancel_detail = task.params.get("quest_name", "") or task.type
+                _report_progress(0, 0, "cancelled", f"{cancel_detail} — Cancelled")
                 logger.info(f"Task {task.id} cancelled: {e}")
             except Exception as e:
                 # Error — stays in active slot
