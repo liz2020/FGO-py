@@ -232,25 +232,16 @@
             padding: 10px 12px;
             margin-bottom: 6px;
             font-size: 0.85rem;
-            cursor: grab;
-            transition: opacity 0.2s, transform 0.15s, margin 0.15s;
         }
-        .queue-item.dragging { opacity: 0.3; transform: scale(0.95); }
-        .queue-item.drag-above { margin-top: 36px; position: relative; }
-        .queue-item.drag-above::before {
-            content: '';
-            position: absolute;
-            top: -22px;
-            left: 0;
-            right: 0;
-            height: 4px;
-            background: var(--success);
-            border-radius: 2px;
+        .queue-item .drag-handle { cursor: grab; }
+        .sortable-ghost {
+            opacity: 0.4;
+            background: rgba(46, 204, 113, 0.15);
+            border: 2px dashed var(--success);
+            border-radius: 8px;
         }
-        .queue-item.drag-into-loop {
-            background: rgba(46, 204, 113, 0.12);
-            border: 1px solid var(--success);
-        }
+        .sortable-chosen { opacity: 0.9; }
+        .sortable-drag { opacity: 0.85; box-shadow: 0 4px 12px rgba(0,0,0,0.3); }
         .queue-item .item-header {
             display: flex;
             align-items: center;
@@ -526,6 +517,14 @@
     </div>
 
 <script>
+// Determine base path for static assets (works both direct and via emu proxy)
+const _STATIC_BASE = (() => {
+    const match = location.pathname.match(/^(\/scripts\/[^/]+\/\d+)\//);
+    return match ? match[1] + '/static' : '/static';
+})();
+document.write('<scr' + 'ipt src="' + _STATIC_BASE + '/lib/Sortable.min.js"></scr' + 'ipt>');
+</script>
+<script>
 const API = (() => {
     const match = location.pathname.match(/^(\/scripts\/[^/]+\/\d+)\//);
     return match ? match[1] : '';
@@ -728,7 +727,7 @@ function renderPending() {
         const desc = describeTask(task);
         const details = describeTaskDetails(task);
         const expanded = expandedIds.has(task.id);
-        return `<li class="queue-item" draggable="true" data-id="${task.id}" data-idx="${idx}">
+        return `<li class="queue-item" data-id="${task.id}" data-idx="${idx}">
             <div class="item-header">
                 <span class="drag-handle">≡</span>
                 <span class="info">${desc}</span>
@@ -753,7 +752,7 @@ function renderLoopItem(task, idx) {
             <button class="remove-btn" onclick="removeChildFromLoop('${task.id}', '${c.id}')" style="font-size:0.8rem;padding:2px 4px;">✕</button>
         </div>`
     ).join('');
-    return `<li class="queue-item" draggable="true" data-id="${task.id}" data-idx="${idx}">
+    return `<li class="queue-item" data-id="${task.id}" data-idx="${idx}">
         <div class="item-header">
             <span class="drag-handle">≡</span>
             <span class="info">🔁 Loop</span>
@@ -1132,80 +1131,77 @@ function describeTaskDetails(task) {
 }
 
 // --- Drag and Drop ---
-let dragSrcId = null;
-
-let _dragDelegationSetup = false;
+let _queueSortable = null;
+let _loopSortables = [];
 
 function setupDragAndDrop() {
+    // Destroy previous instances to avoid duplicates
+    if (_queueSortable) { _queueSortable.destroy(); _queueSortable = null; }
+    _loopSortables.forEach(s => s.destroy());
+    _loopSortables = [];
+
     const list = document.getElementById('queueList');
 
-    // Per-item: dragstart/dragend (must re-bind after innerHTML)
-    const items = list.querySelectorAll('.queue-item[draggable]');
-    items.forEach(item => {
-        item.addEventListener('dragstart', e => {
-            dragSrcId = item.dataset.id;
-            item.classList.add('dragging');
-            e.dataTransfer.effectAllowed = 'move';
-            e.dataTransfer.setData('text/plain', item.dataset.id);
+    // Main queue sortable
+    _queueSortable = Sortable.create(list, {
+        group: { name: 'queue', pull: true, put: true },
+        animation: 150,
+        handle: '.drag-handle',
+        draggable: '.queue-item',
+        ghostClass: 'sortable-ghost',
+        chosenClass: 'sortable-chosen',
+        dragClass: 'sortable-drag',
+        onEnd: function(evt) {
+            // Item moved within the main queue — reorder
+            if (evt.from === evt.to && evt.from === list) {
+                const items = list.querySelectorAll('.queue-item');
+                const ids = Array.from(items).map(el => el.dataset.id);
+                submitReorder(ids);
+            }
+        }
+    });
+
+    // Loop children sortables — allow dropping items into loops
+    const dropZones = list.querySelectorAll('.loop-drop-zone');
+    dropZones.forEach(zone => {
+        const loopId = zone.dataset.loopId;
+        const sortable = Sortable.create(zone, {
+            group: { name: 'queue', pull: true, put: function(to, from, dragEl) {
+                // Don't allow dropping a loop into itself
+                return dragEl.dataset.id !== loopId;
+            }},
+            animation: 150,
+            draggable: '.loop-child-item',
+            ghostClass: 'sortable-ghost',
+            onAdd: function(evt) {
+                // A task was dropped into this loop from the main queue
+                const taskId = evt.item.dataset.id;
+                if (taskId && taskId !== loopId) {
+                    addChildToLoop(loopId, taskId);
+                }
+                // Re-render will fix the DOM
+            }
         });
-        item.addEventListener('dragend', () => {
-            item.classList.remove('dragging');
-            dragSrcId = null;
-            clearAllDragIndicators();
-        });
-    });
-
-    // Delegation on list: only attach once
-    if (_dragDelegationSetup) return;
-    _dragDelegationSetup = true;
-
-    list.addEventListener('dragover', e => {
-        e.preventDefault();
-        e.dataTransfer.dropEffect = 'move';
-        clearAllDragIndicators();
-
-        const target = e.target.closest('.queue-item');
-        if (!target || target.dataset.id === dragSrcId) return;
-
-        // Check if hovering over a loop's children drop zone
-        const dropZone = e.target.closest('.loop-drop-zone');
-        if (dropZone && dropZone.dataset.loopId !== dragSrcId) {
-            target.classList.add('drag-into-loop');
-            return;
-        }
-
-        // Standard reorder: show green insertion line above this item
-        target.classList.add('drag-above');
-    });
-
-    list.addEventListener('dragleave', e => {
-        if (!list.contains(e.relatedTarget)) {
-            clearAllDragIndicators();
-        }
-    });
-
-    list.addEventListener('drop', e => {
-        e.preventDefault();
-        clearAllDragIndicators();
-
-        const target = e.target.closest('.queue-item');
-        if (!target || !dragSrcId || target.dataset.id === dragSrcId) return;
-
-        // Check if dropped onto a loop's children zone
-        const dropZone = e.target.closest('.loop-drop-zone');
-        if (dropZone && dropZone.dataset.loopId !== dragSrcId) {
-            addChildToLoop(dropZone.dataset.loopId, dragSrcId);
-            return;
-        }
-
-        // Standard reorder
-        reorderQueue(dragSrcId, target.dataset.id);
+        _loopSortables.push(sortable);
     });
 }
 
-function clearAllDragIndicators() {
-    document.querySelectorAll('.drag-above').forEach(el => el.classList.remove('drag-above'));
-    document.querySelectorAll('.drag-into-loop').forEach(el => el.classList.remove('drag-into-loop'));
+async function submitReorder(ids) {
+    // Filter out loop tasks' IDs that haven't changed structure
+    const pendingIds = state.pending.map(t => t.id);
+    // Only submit if the order actually changed
+    if (JSON.stringify(ids) === JSON.stringify(pendingIds)) return;
+    try {
+        await fetch(`${API}/api/queue/reorder`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ids })
+        });
+        await fetchState();
+    } catch (e) {
+        console.error('Reorder error:', e);
+        await fetchState();  // Reset DOM to server state
+    }
 }
 
 async function reorderQueue(fromId, beforeId) {
