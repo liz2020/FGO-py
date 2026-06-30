@@ -508,11 +508,31 @@ async function syncAutoBattleState() {
 function handleEvent(msg) {
     switch (msg.event) {
         case 'state_updated':
-        case 'task_finished':
-        case 'task_started':
         case 'queue_idle':
             if (msg.state) {
                 state = msg.state;
+            }
+            render();
+            break;
+        case 'task_started':
+            if (msg.state) {
+                state = msg.state;
+            }
+            // Stop live when emulator is being shut down
+            if (msg.task && msg.task.type === 'stop_emulator' && liveActive) {
+                stopLive();
+                document.getElementById('btnLive').classList.remove('active');
+            }
+            render();
+            break;
+        case 'task_finished':
+            if (msg.state) {
+                state = msg.state;
+            }
+            // Resume live when emulator has started
+            if (msg.task && msg.task.type === 'start_emulator' && msg.task.status === 'done' && !liveActive) {
+                startLive();
+                document.getElementById('btnLive').classList.add('active');
             }
             render();
             break;
