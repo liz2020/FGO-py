@@ -577,12 +577,13 @@ function renderActive() {
             <div class="item-details show">${progressBar}${details}</div>`;
         } else {
             const label = st === 'error' ? 'Error' : 'Cancelled';
+            const progressBar = renderProgressBar(activeProgress, st === 'cancelled');
             el.innerHTML = `<div class="active-task" style="border-color: var(--primary);">
                 <span class="info">${desc}</span>
                 <span class="status-badge" style="background: rgba(233,69,96,0.2); color: var(--primary);">${label}</span>
                 <button class="expand-btn expanded" onclick="toggleExpand(this, 'active')">▸</button>
             </div>
-            <div class="item-details show">${details}</div>`;
+            <div class="item-details show">${progressBar}${details}</div>`;
         }
     } else {
         activeProgress = null;
@@ -603,12 +604,13 @@ function renderActiveProgress() {
     }
 }
 
-function renderProgressBar(progress) {
+function renderProgressBar(progress, cancelled) {
     if (!progress || !progress.total) return '';
     const pct = Math.round((progress.current / progress.total) * 100);
+    const barColor = cancelled ? '#e74c3c' : 'var(--success)';
     return `<div class="progress-wrap" style="margin-bottom:8px;">
         <div style="background:rgba(255,255,255,0.08);border-radius:6px;height:20px;position:relative;overflow:hidden;">
-            <div style="background:var(--success);height:100%;border-radius:6px;width:${pct}%;transition:width 0.5s ease;"></div>
+            <div style="background:${barColor};height:100%;border-radius:6px;width:${pct}%;transition:width 0.5s ease;"></div>
             <span style="position:absolute;top:0;left:0;right:0;bottom:0;display:flex;align-items:center;justify-content:center;font-size:0.75rem;font-weight:600;">${progress.current}/${progress.total} ${progress.detail || ''}</span>
         </div>
     </div>`;
