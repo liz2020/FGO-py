@@ -163,11 +163,34 @@ Script status is **always visible** for registered instances:
 │  [Stopped]                        │  ← emulator status
 │  Index 0 · IP --                  │
 │                                   │
+│  ┌─────────────────────────────┐  │
+│  │                             │  │
+│  │   (screenshot preview)      │  │  ← greyed out / placeholder when
+│  │   "Emulator offline"        │  │     emulator is stopped
+│  │                             │  │
+│  └─────────────────────────────┘  │
+│                                   │
 │  Script: ⏳ Waiting (restart in   │  ← visible even when emu is stopped
 │          12 min)                   │
 │  [Stop Script]  [→ FGO-py]       │
 └───────────────────────────────────┘
+
+┌─ Instance: FGO-2 ────────────────┐
+│  [Running]                        │  ← emulator status
+│  Index 1 · IP 192.168.1.2        │
+│                                   │
+│  ┌─────────────────────────────┐  │
+│  │                             │  │
+│  │   (live screenshot)         │  │  ← normal live preview
+│  │                             │  │
+│  └─────────────────────────────┘  │
+│                                   │
+│  Script: Running — 冬木 #3 ×5    │
+│  [Stop Script]  [→ FGO-py]       │
+└───────────────────────────────────┘
 ```
+
+When the emulator is offline, the preview area shows a dimmed placeholder with "Emulator offline" text instead of disappearing entirely.
 
 ### Script States (exposed via API)
 
