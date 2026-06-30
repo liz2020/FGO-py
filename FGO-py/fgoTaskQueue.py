@@ -270,8 +270,15 @@ class TaskWorker(threading.Thread):
             case "wait":
                 minutes = task.params.get("minutes", 1)
                 logger.info(f"Waiting {minutes} minutes")
-                _report_progress(0, 0, "running", f"Waiting {minutes} min")
-                schedule.sleep(minutes * 60)
+                total_seconds = minutes * 60
+                elapsed = 0
+                while elapsed < total_seconds:
+                    remaining = (total_seconds - elapsed) // 60
+                    _report_progress(elapsed, total_seconds, "running", f"Waiting — {remaining} min left")
+                    chunk = min(30, total_seconds - elapsed)
+                    schedule.sleep(chunk)
+                    elapsed += chunk
+                _report_progress(total_seconds, total_seconds, "done", "Wait complete")
                 return {"waited_minutes": minutes}
             case "stop_script":
                 logger.info("Stop script task — clearing queue and stopping")
