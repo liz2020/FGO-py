@@ -287,10 +287,6 @@ class TaskWorker(threading.Thread):
                     elapsed += chunk
                 _report_progress(total_seconds, total_seconds, "done", "Wait complete")
                 return {"waited_minutes": minutes}
-            case "stop_script":
-                logger.info("Stop script task — clearing queue and stopping")
-                self.queue.clear_pending()
-                raise ScriptStop("stop_script task executed")
             case "stop_emulator":
                 logger.info("Stopping emulator")
                 _report_progress(0, 0, "running", "Stopping emulator")

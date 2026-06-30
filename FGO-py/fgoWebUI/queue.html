@@ -418,7 +418,6 @@
                 <option value="eat_apple">Eat Apple</option>
                 <option value="stop_emulator">Stop Emulator</option>
                 <option value="start_emulator">Start Emulator</option>
-                <option value="stop_script">Stop Script</option>
             </select>
         </div>
         <div class="form-row" id="taskParamWait">
@@ -685,7 +684,6 @@ function describeTask(task) {
     if (task.type === 'eat_apple') return `Eat Apple (${task.params.apple_kind || 'gold'})`;
     if (task.type === 'stop_emulator') return 'Stop Emulator';
     if (task.type === 'start_emulator') return 'Start Emulator';
-    if (task.type === 'stop_script') return 'Stop Script';
     return task.type;
 }
 
@@ -932,7 +930,6 @@ function describeTaskDetails(task) {
     if (task.type === 'eat_apple') return `Use ${task.params.apple_kind || 'gold'} apple to restore AP`;
     if (task.type === 'stop_emulator') return 'Stop the emulator instance';
     if (task.type === 'start_emulator') return 'Start the emulator instance';
-    if (task.type === 'stop_script') return 'Stop script and clear queue';
     return task.type;
 }
 
