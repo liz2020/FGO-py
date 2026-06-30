@@ -59,3 +59,23 @@
 **Fix:** Used raw `time.sleep()` in `_wait_and_reconnect()` for the polling loop, since this is infrastructure work that should always complete. The task boundary handles cancellation.
 
 **Takeaway:** Infrastructure operations (reconnecting devices, waiting for external processes) should use raw sleep, not schedule-aware sleep. Only game automation loops should be interruptible via `schedule.sleep()`.
+
+## 7. `finally` blocks overwrite progress on cancellation
+
+**Assumption:** Putting `_report_progress(total, total, "done", "Complete")` in a `finally` block was safe — it would report completion whether the operation succeeded or was cancelled.
+
+**Reality:** When a task is cancelled via `ScriptStop`, the `finally` block runs *before* the `except ScriptStop` handler. This overwrites `task.progress` with 100% completion, so the cancelled task's progress bar shows full instead of partial.
+
+**Fix:** Moved the "done" progress report out of `finally` and into the success path (after `op()` returns normally). The `finally` block only handles cleanup (`normalAttackOnly = False`), not progress reporting.
+
+**Takeaway:** `finally` blocks should only contain cleanup that is correct in all exit paths. Progress/status reporting is path-dependent — put "done" in the success path and "cancelled" in the exception handler.
+
+## 8. WebSocket initial state event wipes client-side state
+
+**Assumption:** Restoring `activeProgress` from `fetchState()` on page load would persist the progress bar across navigation.
+
+**Reality:** The WebSocket `onopen` triggers the server to send a `state_updated` event with full state. The event handler set `activeProgress = null`, overwriting the progress that `fetchState()` had just restored — causing a flash-then-disappear.
+
+**Fix:** Changed all event handlers (`state_updated`, `task_started`, `task_finished`) to read progress from `state.active.progress` instead of nulling `activeProgress`.
+
+**Takeaway:** When a page has both REST initial load and WebSocket push, ensure the push handler doesn't blindly reset state that the REST call already populated. Extract state from the pushed payload rather than clearing it.
