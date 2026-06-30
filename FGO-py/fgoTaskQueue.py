@@ -7,8 +7,10 @@ Design:
 - "Cancel" stops the active task, marks it cancelled, halts auto-advance
 - Done tasks disappear; cancelled tasks stay in a separate list
 """
+import json
 import threading
 import time
+import urllib.request
 import uuid
 from collections import deque
 from dataclasses import dataclass, field, asdict
@@ -20,6 +22,41 @@ from fgoSchedule import ScriptStop, schedule
 from fgoLogging import getLogger
 
 logger = getLogger('TaskQueue')
+
+# --- Progress reporting to emu manager ---
+
+_emu_manager_url: str | None = None
+_instance_index: int = 0
+
+
+def configure_progress(emu_manager_url: str, instance_index: int):
+    """Set emu manager URL and instance index for progress reporting."""
+    global _emu_manager_url, _instance_index
+    _emu_manager_url = emu_manager_url
+    _instance_index = instance_index
+
+
+def _report_progress(current: int, total: int, status: str = "running", detail: str = ""):
+    """Report farming progress to emu manager (fire-and-forget)."""
+    if not _emu_manager_url:
+        return
+    try:
+        data = json.dumps({
+            "instance_index": _instance_index,
+            "current": current,
+            "total": total,
+            "status": status,
+            "detail": detail,
+        }).encode()
+        req = urllib.request.Request(
+            f"{_emu_manager_url}/api/scripts/fgo/progress",
+            data=data,
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        urllib.request.urlopen(req, timeout=2)
+    except Exception:
+        pass
 
 
 @dataclass
@@ -122,6 +159,11 @@ class TaskQueue:
         """True if there is an actively running task."""
         return self._current is not None and self._current.status == "active"
 
+    def clear_pending(self):
+        """Remove all pending tasks from the queue."""
+        with self._lock:
+            self._tasks.clear()
+
     def pop_next(self) -> Task | None:
         """Block until a task is available and queue is running."""
         while True:
@@ -136,6 +178,7 @@ class TaskQueue:
                 self._running = False
                 self._has_work.clear()
             self._broadcast({"event": "queue_idle", "state": self.get_state()})
+            _report_progress(0, 0, "idle", "")
 
     def subscribe(self, callback: Callable):
         self._subscribers.append(callback)
@@ -204,20 +247,83 @@ class TaskWorker(threading.Thread):
                     task.params.get("apple_kind", "gold")
                 )
                 normal_attack_only = task.params.get("normal_attack_only", False)
+                total = sum(q["count"] for q in task.params["quests"])
+                quest_name = task.params.get("quest_name", "")
                 logger.info(f"Starting operation: quests={quests}, apples={apple_total}, normal_attack_only={normal_attack_only}")
                 fgoKernel.Turn.normalAttackOnly = normal_attack_only
                 try:
                     op = fgoKernel.Operation(quests, apple_total, apple_kind)
+                    # Inject progress callback
+                    op.on_progress = lambda op_inst: _report_progress(
+                        op_inst.battleCount, total, "running", quest_name
+                    )
+                    _report_progress(0, total, "running", quest_name)
                     op()
                 finally:
                     fgoKernel.Turn.normalAttackOnly = False
+                    _report_progress(total, total, "done", "Complete")
                 return {"battle_count": getattr(op, 'battleCount', 0)}
             case "battle":
                 logger.info("Starting battle")
                 fgoKernel.Battle()()
                 return {}
+            case "wait":
+                minutes = task.params.get("minutes", 1)
+                logger.info(f"Waiting {minutes} minutes")
+                _report_progress(0, 0, "running", f"Waiting {minutes} min")
+                schedule.sleep(minutes * 60)
+                return {"waited_minutes": minutes}
+            case "stop_script":
+                logger.info("Stop script task — clearing queue and stopping")
+                self.queue.clear_pending()
+                raise ScriptStop("stop_script task executed")
+            case "stop_emulator":
+                logger.info("Stopping emulator")
+                _report_progress(0, 0, "running", "Stopping emulator")
+                self._call_emu_manager("stop")
+                return {"stopped": True}
+            case "start_emulator":
+                logger.info("Starting emulator")
+                _report_progress(0, 0, "running", "Starting emulator")
+                self._call_emu_manager("launch")
+                # Wait for emulator to be ready (device becomes available)
+                self._wait_for_device(timeout=120)
+                return {"started": True}
+            case "eat_apple":
+                apple_kind = task.params.get("apple_kind", "gold")
+                logger.info(f"Eating apple: {apple_kind}")
+                kind_index = ["gold", "silver", "bronze", "copper", "quartz"].index(apple_kind)
+                # Create a minimal Main instance to use eatApple
+                m = fgoKernel.Main(appleTotal=1, appleKind=kind_index)
+                m.eatApple()
+                return {"apple_kind": apple_kind}
             case _:
                 raise ValueError(f"Unknown task type: {task.type}")
+
+    def _call_emu_manager(self, action: str):
+        """Call emu manager to start/stop the emulator instance."""
+        if not _emu_manager_url:
+            raise RuntimeError("Emu manager URL not configured")
+        try:
+            req = urllib.request.Request(
+                f"{_emu_manager_url}/api/instances/{_instance_index}/{action}",
+                data=b"",
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            urllib.request.urlopen(req, timeout=30)
+        except Exception as e:
+            raise RuntimeError(f"Failed to {action} emulator: {e}")
+
+    def _wait_for_device(self, timeout: int = 120):
+        """Wait until the device becomes available after emulator start."""
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            schedule.sleep(5)
+            if fgoDevice.device.available:
+                logger.info("Device is ready")
+                return
+        raise RuntimeError(f"Device not ready after {timeout}s")
 
 
 # Module-level singleton

@@ -196,7 +196,7 @@ Preview area and script status are **always visible** regardless of emulator sta
 │  │        (live screenshot)                │  │  ← normal live preview
 │  │                                         │  │
 │  └─────────────────────────────────────────┘  │
-│                               ▶ LIVE [● Live] │
+│                                [● Live] │
 │                                               │
 │  ── Automation ──────────────────────────     │
 │  ┃████████████░░░░░░░░┃ 3/5 冬木 T2          │  ← progress bar

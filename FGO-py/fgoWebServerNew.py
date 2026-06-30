@@ -14,7 +14,7 @@ from pydantic import BaseModel
 
 import fgoDevice
 from fgoLogging import getLogger
-from fgoTaskQueue import Task, task_queue, task_worker, run_auto_battle, is_auto_battle_active, cancel_auto_battle
+from fgoTaskQueue import Task, task_queue, task_worker, run_auto_battle, is_auto_battle_active, cancel_auto_battle, configure_progress
 from fgoQuestCatalog import get_catalog
 
 logger = getLogger('WebNew')
@@ -107,9 +107,12 @@ async def get_queue():
     return task_queue.get_state()
 
 
+VALID_TASK_TYPES = ("operation", "battle", "wait", "stop_script", "stop_emulator", "start_emulator", "eat_apple")
+
+
 @app.post("/api/queue")
 async def add_task(req: AddTaskRequest):
-    if req.type not in ("operation", "battle"):
+    if req.type not in VALID_TASK_TYPES:
         raise HTTPException(400, f"Unknown task type: {req.type}")
     task = Task(type=req.type, params=req.params)
     task_queue.add(task)
@@ -318,6 +321,16 @@ async def ws_status(websocket: WebSocket):
 
 def main(config=None, port: int = 15000):
     import uvicorn
+    # Configure progress reporting to emu manager
+    instance_index = 0
+    try:
+        if hasattr(fgoDevice, 'device') and fgoDevice.device:
+            name = getattr(fgoDevice.device, 'name', '')
+            if 'ldplayer:' in name:
+                instance_index = int(name.split(':')[1])
+    except Exception:
+        pass
+    configure_progress('http://127.0.0.1:15100', instance_index)
     uvicorn.run(app, host="0.0.0.0", port=port, log_level="info", access_log=False)
 
 
