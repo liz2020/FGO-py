@@ -275,11 +275,31 @@ async def get_quests(lang: str = "zh"):
     return get_catalog(lang)
 
 
+@app.post("/api/reconnect")
+async def reconnect_device():
+    """Try to reconnect to the device (e.g., after emulator starts)."""
+    pending = getattr(fgoDevice, '_pending_device_name', None)
+    if not pending:
+        raise HTTPException(400, "No device name configured")
+    try:
+        fgoDevice.device = fgoDevice.Device(pending)
+        return {"ok": True, "device": fgoDevice.device.name}
+    except Exception as e:
+        raise HTTPException(503, f"Device not available: {e}")
+
+
 @app.post("/api/screenshot")
 async def screenshot():
     if not fgoDevice.device.available:
-        logger.warning("Screenshot request failed: device not available")
-        raise HTTPException(503, "Device not available")
+        # Try to reconnect automatically if we know the device name
+        pending = getattr(fgoDevice, '_pending_device_name', None)
+        if pending:
+            try:
+                fgoDevice.device = fgoDevice.Device(pending)
+            except Exception:
+                pass
+        if not fgoDevice.device.available:
+            raise HTTPException(503, "Device not available")
 
     def _capture():
         img = fgoDevice.device.screenshot()

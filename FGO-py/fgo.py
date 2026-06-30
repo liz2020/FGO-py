@@ -45,6 +45,7 @@ if not config.farming:
 # Connect to device if specified via CLI
 if arg.device:
     import fgoDevice
+    fgoDevice._pending_device_name = arg.device
     try:
         fgoDevice.device=fgoDevice.Device(arg.device)
     except Exception as e:
