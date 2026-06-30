@@ -332,7 +332,7 @@
 
         // Stop button on meta line (only when running)
         const stopBtn = isRunning
-            ? ` · <button class="btn-stop-inline" onclick="action(${inst.index}, 'stop')" title="Stop emulator">⏹ Stop</button>`
+            ? `<button class="btn-stop-inline" onclick="action(${inst.index}, 'stop')" title="Stop emulator">⏹ Stop</button> · `
             : '';
 
         let preview = '';
@@ -390,7 +390,7 @@
                 <h2>${inst.name}</h2>
                 <span class="card-status ${statusClass}">${inst.status}</span>
             </div>
-            <div class="card-meta">Index ${inst.index} · ${inst.adb_serial}${stopBtn}</div>
+            <div class="card-meta">${stopBtn}Index ${inst.index} · ${inst.adb_serial}</div>
             ${preview}
             ${buttons}
             ${scriptsHtml}
