@@ -297,6 +297,125 @@ B. **Call emu manager API** — FGO-py calls `POST /api/instances/{id}/start|sto
 
 ---
 
+## Progress Bar: FGO-py → Emu Manager
+
+### Current Infrastructure
+
+The emu manager **already has** a progress reporting system:
+
+```
+FGO-py script ──POST──► emu manager /api/scripts/{name}/progress
+                              │
+emu dashboard ──GET───► emu manager /api/scripts/{name}/progress/{index}
+                              │
+                         renders progress bar: ┃████░░░░┃ 3/5 冬木 T2
+```
+
+**Emu manager endpoints (already implemented):**
+- `POST /api/scripts/{name}/progress` — script pushes `{instance_index, current, total, status, detail}`
+- `GET /api/scripts/{name}/progress/{index}` — dashboard polls every 10s
+
+**Dashboard rendering (already implemented):**
+- Shows progress bar when `total > 0`
+- Shows text status when `status !== 'idle'`
+- Format: `{current}/{total} {detail}`
+
+**Problem:** FGO-py never calls the POST endpoint. The progress bar sits empty.
+
+### Available Data in Kernel
+
+| Data | Location | When Updated |
+|------|----------|--------------|
+| Battle count | `Main.battleCount` | After each battle completes |
+| Battle turn | `Battle.turn` | At each turn start detection |
+| Total battles | `Operation` params sum | Known before execution |
+| Quest tuple | `Operation` list items | Known before execution |
+| Battle time | `Main.battleTime` | After each battle |
+| Defeated count | `Main.defeated` | On battle loss |
+
+### Implementation: Progress Callback
+
+Inject a progress reporter into the `TaskWorker._execute()` that fires after each battle:
+
+```python
+# In fgoTaskQueue.py
+
+class TaskWorker:
+    def __init__(self, queue, emu_manager_url: str, instance_index: int):
+        self.emu_url = emu_manager_url
+        self.instance_index = instance_index
+
+    def _report_progress(self, current: int, total: int, detail: str):
+        """POST progress to emu manager."""
+        try:
+            requests.post(f"{self.emu_url}/api/scripts/fgo/progress", json={
+                "instance_index": self.instance_index,
+                "current": current,
+                "total": total,
+                "status": "running",
+                "detail": detail,
+            }, timeout=2)
+        except Exception:
+            pass  # Non-critical, don't crash on reporting failure
+
+    def _execute(self, task):
+        match task.type:
+            case "operation":
+                quests = task.params["quests"]
+                total = sum(q["count"] for q in quests)
+
+                # Progress hook — called from kernel after each battle
+                def on_battle_complete(op):
+                    quest_name = task.params.get("quest_name", "")
+                    detail = f"{quest_name} T{getattr(op, '_currentBattle', {}).get('turn', '?')}"
+                    self._report_progress(op.battleCount, total, detail)
+
+                op = fgoKernel.Operation(...)
+                op.on_progress = on_battle_complete  # inject callback
+                op()
+                self._report_progress(total, total, "Done")
+                return {"battle_count": op.battleCount}
+```
+
+### Kernel Hook Point
+
+The callback fires in `Main.__call__()` after `self.battleCount += 1`:
+
+```python
+# In fgoKernel.py, Main.__call__() battle loop
+
+self.battleCount += 1
+self.battleTurn += battle.turn
+self.battleTime += battle.time
+
+# Progress callback (if set by task queue)
+if hasattr(self, 'on_progress') and self.on_progress:
+    self.on_progress(self)
+```
+
+This is minimally invasive — a single `if hasattr` check in the hot path.
+
+### Detail String Format
+
+The `detail` field shown in the progress bar text:
+
+| Scenario | Detail |
+|----------|--------|
+| Farming quest | `冬木 #3 T2` (quest name + current turn) |
+| Between battles | `冬木 #3` (no turn info) |
+| Wait task | `Waiting 12 min` |
+| Starting emu | `Booting...` |
+
+### Reset on Idle
+
+When the task finishes or the queue goes idle, clear progress:
+
+```python
+self._report_progress(0, 0, "")  # status resets to idle on emu dashboard
+```
+
+---
+
 ## Implementation Plan
 
 ### Phase 1: Task type infrastructure
