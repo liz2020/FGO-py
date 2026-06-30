@@ -78,6 +78,7 @@
             color: var(--text-dim);
             margin-bottom: 12px;
             padding: 0 16px;
+            text-align: left;
         }
         .preview-area {
             background: #000;
@@ -370,8 +371,8 @@
                     progressHtml = `<div class="progress-text" style="font-size:0.8rem;color:var(--text-dim);margin-bottom:4px;">${prog.detail || prog.status}</div>`;
                 }
                 scriptBtns += progressHtml;
+                scriptBtns += `<button class="btn-stop-inline" onclick="stopScript('${r.name}', ${inst.index})">⏹ Stop</button> `;
                 scriptBtns += `<button class="btn btn-script" onclick="openScriptUI('${r.name}', ${inst.index})">→ ${r.display_name}</button>`;
-                scriptBtns += `<button class="btn btn-stop" onclick="stopScript('${r.name}', ${inst.index})">⏹</button>`;
             }
             for (const s of available) {
                 scriptBtns += `<button class="btn btn-app" onclick="startScript('${s.name}', ${inst.index})">▶ ${s.display_name}</button>`;
