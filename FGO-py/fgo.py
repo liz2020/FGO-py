@@ -45,7 +45,11 @@ if not config.farming:
 # Connect to device if specified via CLI
 if arg.device:
     import fgoDevice
-    fgoDevice.device=fgoDevice.Device(arg.device)
+    fgoDevice._pending_device_name = arg.device
+    try:
+        fgoDevice.device=fgoDevice.Device(arg.device)
+    except Exception as e:
+        fgoLogging.logger.warning(f'Device not available: {e} (server will start without device)')
 
 try:main(config,port=arg.port)
 except Exception as e:fgoLogging.logger.exception(e)

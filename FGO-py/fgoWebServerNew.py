@@ -14,7 +14,7 @@ from pydantic import BaseModel
 
 import fgoDevice
 from fgoLogging import getLogger
-from fgoTaskQueue import Task, task_queue, task_worker, run_auto_battle, is_auto_battle_active, cancel_auto_battle
+from fgoTaskQueue import Task, task_queue, task_worker, run_auto_battle, is_auto_battle_active, cancel_auto_battle, configure_progress
 from fgoQuestCatalog import get_catalog
 
 logger = getLogger('WebNew')
@@ -107,9 +107,12 @@ async def get_queue():
     return task_queue.get_state()
 
 
+VALID_TASK_TYPES = ("operation", "battle", "wait", "stop_emulator", "start_emulator")
+
+
 @app.post("/api/queue")
 async def add_task(req: AddTaskRequest):
-    if req.type not in ("operation", "battle"):
+    if req.type not in VALID_TASK_TYPES:
         raise HTTPException(400, f"Unknown task type: {req.type}")
     task = Task(type=req.type, params=req.params)
     task_queue.add(task)
@@ -272,11 +275,31 @@ async def get_quests(lang: str = "zh"):
     return get_catalog(lang)
 
 
+@app.post("/api/reconnect")
+async def reconnect_device():
+    """Try to reconnect to the device (e.g., after emulator starts)."""
+    pending = getattr(fgoDevice, '_pending_device_name', None)
+    if not pending:
+        raise HTTPException(400, "No device name configured")
+    try:
+        fgoDevice.device = fgoDevice.Device(pending)
+        return {"ok": True, "device": fgoDevice.device.name}
+    except Exception as e:
+        raise HTTPException(503, f"Device not available: {e}")
+
+
 @app.post("/api/screenshot")
 async def screenshot():
     if not fgoDevice.device.available:
-        logger.warning("Screenshot request failed: device not available")
-        raise HTTPException(503, "Device not available")
+        # Try to reconnect automatically if we know the device name
+        pending = getattr(fgoDevice, '_pending_device_name', None)
+        if pending:
+            try:
+                fgoDevice.device = fgoDevice.Device(pending)
+            except Exception:
+                pass
+        if not fgoDevice.device.available:
+            raise HTTPException(503, "Device not available")
 
     def _capture():
         img = fgoDevice.device.screenshot()
@@ -314,10 +337,26 @@ async def ws_status(websocket: WebSocket):
         ws_manager.disconnect(websocket)
 
 
+@app.get("/api/device-status")
+async def device_status():
+    """Check if the emulator device is currently available."""
+    return {"available": fgoDevice.device.available}
+
+
 # --- Entry point ---
 
 def main(config=None, port: int = 15000):
     import uvicorn
+    # Configure progress reporting to emu manager
+    instance_index = 0
+    try:
+        if hasattr(fgoDevice, 'device') and fgoDevice.device:
+            name = getattr(fgoDevice.device, 'name', '')
+            if 'ldplayer:' in name:
+                instance_index = int(name.split(':')[1])
+    except Exception:
+        pass
+    configure_progress('http://127.0.0.1:15100', instance_index)
     uvicorn.run(app, host="0.0.0.0", port=port, log_level="info", access_log=False)
 
 

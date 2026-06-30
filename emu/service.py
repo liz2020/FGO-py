@@ -125,12 +125,8 @@ def create_app() -> FastAPI:
 
     @app.post("/api/instances/{index}/stop")
     async def stop_instance(index: int):
-        # Stop all scripts running on this instance first
-        for script in registry.scripts:
-            running = registry.get_running(script.name, index)
-            if running:
-                registry.stop(script.name, index)
-                logger.info("Stopped script %s on instance %d (emulator stopping)", script.name, index)
+        # Script is independent — no longer stopped when emulator stops.
+        # The script detects emulator-offline via screenshot failure and handles it gracefully.
         b = get_backend()
         success = b.stop(index)
         return {"success": success, "message": f"Instance {index} stop requested"}
@@ -235,7 +231,11 @@ def create_app() -> FastAPI:
             raise HTTPException(status_code=404, detail=f"Script '{name}' not found")
 
         b = get_backend()
-        serial = b.adb_serial(instance_index)
+        # Get ADB serial — may be unavailable if emulator is stopped
+        try:
+            serial = b.adb_serial(instance_index)
+        except Exception:
+            serial = f"127.0.0.1:{5555 + instance_index * 2}"  # default LDPlayer serial
 
         # Use the repo root as cwd for script processes
         import pathlib

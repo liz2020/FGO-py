@@ -66,6 +66,9 @@ deploy/              # Deployment scripts
 
 ### Task Queue & Web Server
 - **`fgoTaskQueue.py`**: Thread-safe queue with `TaskWorker` thread. Broadcasts events via subscriber callbacks.
+- **Task types**: `operation` (quest farming), `battle` (single battle), `wait` (timed delay with progress), `stop_emulator`, `start_emulator`. Each type has its own handler in `_execute()`.
+- **Progress reporting**: Kernel hooks (`on_progress` callback after `battleCount` increment) and wait-task loops POST progress to the emu manager's existing `/api/scripts/{name}/progress` endpoint. Also broadcasts `task_progress` WebSocket events to the FGO-py web UI.
+- **Device lifecycle**: `stop_emulator` resets device to disconnected placeholder; `start_emulator` polls until screenshot succeeds via `_wait_and_reconnect()`.
 - **`fgoWebServerNew.py`**: FastAPI with lifespan. WebSocket per client with `asyncio.Queue` for reliable thread→async event delivery.
 - **Bridge pattern**: Worker thread → `call_soon_threadsafe(enqueue)` → per-connection Queue → sender task → WebSocket.
 
@@ -99,6 +102,9 @@ deploy/              # Deployment scripts
 7. **Chinese text in subprocess output** — Set `PYTHONIOENCODING=utf-8` or wrap stdout with `io.TextIOWrapper`.
 8. **`Battle()` loop never self-terminates** — It assumes you're already on a battle screen. If called outside battle, it loops forever. Always provide a cancel mechanism (`schedule.stop()`).
 9. **WebSocket re-renders destroy DOM state** — Any client-side state (expanded panels, scroll position) must be tracked in JS variables and reapplied after innerHTML replacement.
+10. **LDOpenGL handles crash on emulator exit** — When the emulator stops, shared memory handles become invalid. Reset `fgoDevice.device = fgoDevice.Device()` (disconnected placeholder) *before* stopping the emulator, not after.
+11. **FGO-py web server must start without emulator** — `LDPlayerDevice.__init__` raises `RuntimeError` when emulator is offline. Wrap in try/catch and store `_pending_device_name` for lazy reconnection. The web server and task queue should work even without a connected device.
+12. **`eat_apple` is not a standalone task** — Apple consumption only works mid-operation when the game prompts for AP recovery. It's a parameter on `operation` tasks (`apple_total`, `apple_kind`), not an independent task type.
 
 ## Design Logs
 
@@ -107,6 +113,7 @@ deploy/              # Deployment scripts
 - `doc/design_logs/003-webui-task-queue.md` — Web UI task queue design
 - `doc/design_logs/004-optional-navigation-nodes.md` — Optional navigation nodes for account state
 - `doc/design_logs/005-webui-battle-improvements.md` — Normal-attack-only, drag queue, auto-battle button
+- `doc/design_logs/008-task-types-and-emu-decoupling.md` — New task types (wait, stop/start emulator), progress bar, emu-script decoupling
 - `doc/design_logs/impl_learnings/` — Implementation surprises and fixes per feature
 
 ## Implementation Learnings Convention

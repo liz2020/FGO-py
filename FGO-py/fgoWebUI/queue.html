@@ -408,6 +408,24 @@
         <button class="btn-add" onclick="addToQueue()">+ Add to Queue</button>
     </div>
 
+    <!-- Add Task (system-level tasks) -->
+    <div class="section">
+        <h3>Add Task</h3>
+        <div class="form-row">
+            <label>Task</label>
+            <select id="selTaskType" onchange="onTaskTypeChange()">
+                <option value="wait">Wait</option>
+                <option value="stop_emulator">Stop Emulator</option>
+                <option value="start_emulator">Start Emulator</option>
+            </select>
+        </div>
+        <div class="form-row" id="taskParamWait">
+            <label>Minutes</label>
+            <input type="number" id="inputWaitMinutes" value="30" min="1" max="9999">
+        </div>
+        <button class="btn-add" onclick="addTaskToQueue()">+ Add to Queue</button>
+    </div>
+
 <script>
 const API = (() => {
     const match = location.pathname.match(/^(\/scripts\/[^/]+\/\d+)\//);
@@ -422,7 +440,8 @@ let autoBattleActive = false;
 let manualMode = false;
 let preManualLiveState = false;
 let pointerState = null;
-let expandedIds = new Set();  // track expanded task IDs across re-renders
+let expandedIds = new Set(['active']);  // active task expanded by default
+let activeProgress = null;  // {current, total, detail}
 
 // Back link visibility
 (function() {
@@ -478,13 +497,38 @@ async function syncAutoBattleState() {
 function handleEvent(msg) {
     switch (msg.event) {
         case 'state_updated':
-        case 'task_finished':
-        case 'task_started':
         case 'queue_idle':
             if (msg.state) {
                 state = msg.state;
             }
+            activeProgress = (state.active && state.active.progress) || null;
             render();
+            break;
+        case 'task_started':
+            if (msg.state) {
+                state = msg.state;
+            }
+            activeProgress = (state.active && state.active.progress) || null;
+            // Stop live when emulator is being shut down
+            if (msg.task && msg.task.type === 'stop_emulator' && liveActive) {
+                showEmulatorOffline();
+            }
+            render();
+            break;
+        case 'task_finished':
+            if (msg.state) {
+                state = msg.state;
+            }
+            activeProgress = (state.active && state.active.progress) || null;
+            if (msg.task && msg.task.type === 'start_emulator' && msg.task.status === 'done' && !liveActive) {
+                startLive();
+                document.getElementById('btnLive').classList.add('active');
+            }
+            render();
+            break;
+        case 'task_progress':
+            activeProgress = msg.progress;
+            renderActiveProgress();
             break;
         case 'auto_battle_started':
             autoBattleActive = true;
@@ -520,27 +564,56 @@ function renderActive() {
     if (state.active) {
         const desc = describeTask(state.active);
         const details = describeTaskDetails(state.active);
-        const expanded = expandedIds.has('active');
+        // Active task is always expanded
+        expandedIds.add('active');
+        const progressBar = renderProgressBar(activeProgress);
         const st = state.active.status;
         if (st === 'active') {
             el.innerHTML = `<div class="active-task">
                 <span class="info">${desc}</span>
                 <span class="status-badge">Running</span>
-                <button class="expand-btn${expanded ? ' expanded' : ''}" onclick="toggleExpand(this, 'active')">▸</button>
+                <button class="expand-btn expanded" onclick="toggleExpand(this, 'active')">▸</button>
             </div>
-            <div class="item-details${expanded ? ' show' : ''}">${details}</div>`;
+            <div class="item-details show">${progressBar}${details}</div>`;
         } else {
             const label = st === 'error' ? 'Error' : 'Cancelled';
+            const progressBar = renderProgressBar(activeProgress, st === 'cancelled');
             el.innerHTML = `<div class="active-task" style="border-color: var(--primary);">
                 <span class="info">${desc}</span>
                 <span class="status-badge" style="background: rgba(233,69,96,0.2); color: var(--primary);">${label}</span>
-                <button class="expand-btn${expanded ? ' expanded' : ''}" onclick="toggleExpand(this, 'active')">▸</button>
+                <button class="expand-btn expanded" onclick="toggleExpand(this, 'active')">▸</button>
             </div>
-            <div class="item-details${expanded ? ' show' : ''}">${details}</div>`;
+            <div class="item-details show">${progressBar}${details}</div>`;
         }
     } else {
+        activeProgress = null;
         el.innerHTML = '<div class="active-empty">No active task</div>';
     }
+}
+
+function renderActiveProgress() {
+    // Update just the progress bar without full re-render (avoids flicker)
+    const detailsEl = document.querySelector('#activeSlot .item-details');
+    if (!detailsEl) return;
+    const bar = detailsEl.querySelector('.progress-wrap');
+    const newBar = renderProgressBar(activeProgress);
+    if (bar) {
+        bar.outerHTML = newBar;
+    } else if (newBar) {
+        detailsEl.insertAdjacentHTML('afterbegin', newBar);
+    }
+}
+
+function renderProgressBar(progress, cancelled) {
+    if (!progress || !progress.total) return '';
+    const pct = Math.round((progress.current / progress.total) * 100);
+    const barColor = cancelled ? '#e74c3c' : 'var(--success)';
+    return `<div class="progress-wrap" style="margin-bottom:8px;">
+        <div style="background:rgba(255,255,255,0.08);border-radius:6px;height:20px;position:relative;overflow:hidden;">
+            <div style="background:${barColor};height:100%;border-radius:6px;width:${pct}%;transition:width 0.5s ease;"></div>
+            <span style="position:absolute;top:0;left:0;right:0;bottom:0;display:flex;align-items:center;justify-content:center;font-size:0.75rem;font-weight:600;">${progress.current}/${progress.total} ${progress.detail || ''}</span>
+        </div>
+    </div>`;
 }
 
 function renderPending() {
@@ -596,6 +669,9 @@ function describeTask(task) {
         return `${name} ×${count}`;
     }
     if (task.type === 'battle') return 'Battle';
+    if (task.type === 'wait') return `Wait ${task.params.minutes || '?'} min`;
+    if (task.type === 'stop_emulator') return 'Stop Emulator';
+    if (task.type === 'start_emulator') return 'Start Emulator';
     return task.type;
 }
 
@@ -616,6 +692,10 @@ function findQuestName(tuple) {
 async function fetchState() {
     const res = await fetch(`${API}/api/queue`);
     state = await res.json();
+    // Restore progress from active task (e.g., after page reload)
+    if (state.active && state.active.progress) {
+        activeProgress = state.active.progress;
+    }
     render();
 }
 
@@ -641,8 +721,10 @@ async function addToQueue() {
     const count = parseInt(document.getElementById('inputCount').value) || 1;
     const normalAttackOnly = document.getElementById('chkNormalAttack').checked;
     try {
+        const questName = findQuestName(quest) || quest.join('-');
         const params = {
             quests: [{ quest, count }],
+            quest_name: questName,
             apple_total: 0,
             apple_kind: 'gold',
         };
@@ -658,6 +740,29 @@ async function addToQueue() {
     }
 }
 
+function onTaskTypeChange() {
+    const type = document.getElementById('selTaskType').value;
+    document.getElementById('taskParamWait').style.display = type === 'wait' ? '' : 'none';
+}
+
+async function addTaskToQueue() {
+    const type = document.getElementById('selTaskType').value;
+    let params = {};
+    if (type === 'wait') {
+        params.minutes = parseInt(document.getElementById('inputWaitMinutes').value) || 1;
+    }
+    try {
+        await fetch(`${API}/api/queue`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ type, params })
+        });
+        await fetchState();
+    } catch (e) {
+        console.error('Add task error:', e);
+    }
+}
+
 async function removeFromQueue(taskId) {
     await fetch(`${API}/api/queue/${taskId}`, { method: 'DELETE' });
     await fetchState();
@@ -666,6 +771,11 @@ async function removeFromQueue(taskId) {
 async function takeScreenshot() {
     try {
         const res = await fetch(`${API}/api/screenshot`, { method: 'POST' });
+        if (res.status === 503) {
+            // Device offline — show placeholder and stop live
+            showEmulatorOffline();
+            return;
+        }
         const data = await res.json();
         const box = document.getElementById('screenshotBox');
         let img = box.querySelector('img');
@@ -683,6 +793,13 @@ async function takeScreenshot() {
     if (liveActive) {
         liveInterval = setTimeout(takeScreenshot, 100);
     }
+}
+
+function showEmulatorOffline() {
+    const box = document.getElementById('screenshotBox');
+    box.innerHTML = '<div class="no-image">Emulator offline</div>';
+    stopLive();
+    document.getElementById('btnLive').classList.remove('active');
 }
 
 // --- Quest selector ---
@@ -812,6 +929,9 @@ function describeTaskDetails(task) {
         return lines.join('<br>') || 'No details';
     }
     if (task.type === 'battle') return 'One-off battle';
+    if (task.type === 'wait') return `Wait for ${task.params.minutes || '?'} minutes`;
+    if (task.type === 'stop_emulator') return 'Stop the emulator instance';
+    if (task.type === 'start_emulator') return 'Start the emulator instance';
     return task.type;
 }
 
@@ -988,9 +1108,18 @@ function preventContext(e) { e.preventDefault(); }
 connectWS();
 fetchCatalog();
 fetchState();
-// Default live ON
-startLive();
-document.getElementById('btnLive').classList.add('active');
+// Check device status before starting live
+fetch(`${API}/api/device-status`).then(r => r.json()).then(data => {
+    if (data.available) {
+        startLive();
+        document.getElementById('btnLive').classList.add('active');
+    } else {
+        showEmulatorOffline();
+    }
+}).catch(() => {
+    startLive();
+    document.getElementById('btnLive').classList.add('active');
+});
 </script>
 </body>
 </html>

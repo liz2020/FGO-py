@@ -7,8 +7,10 @@ Design:
 - "Cancel" stops the active task, marks it cancelled, halts auto-advance
 - Done tasks disappear; cancelled tasks stay in a separate list
 """
+import json
 import threading
 import time
+import urllib.request
 import uuid
 from collections import deque
 from dataclasses import dataclass, field, asdict
@@ -21,6 +23,47 @@ from fgoLogging import getLogger
 
 logger = getLogger('TaskQueue')
 
+# --- Progress reporting to emu manager ---
+
+_emu_manager_url: str | None = None
+_instance_index: int = 0
+
+
+def configure_progress(emu_manager_url: str, instance_index: int):
+    """Set emu manager URL and instance index for progress reporting."""
+    global _emu_manager_url, _instance_index
+    _emu_manager_url = emu_manager_url
+    _instance_index = instance_index
+
+
+def _report_progress(current: int, total: int, status: str = "running", detail: str = ""):
+    """Report farming progress to emu manager and broadcast to WebSocket clients."""
+    # Update active task's progress for local WebSocket clients
+    if task_queue._current and task_queue._current.status == "active":
+        task_queue._current.progress = {"current": current, "total": total, "detail": detail}
+        task_queue._broadcast({"event": "task_progress", "progress": {"current": current, "total": total, "detail": detail}})
+
+    # Report to emu manager
+    if not _emu_manager_url:
+        return
+    try:
+        data = json.dumps({
+            "instance_index": _instance_index,
+            "current": current,
+            "total": total,
+            "status": status,
+            "detail": detail,
+        }).encode()
+        req = urllib.request.Request(
+            f"{_emu_manager_url}/api/scripts/fgo/progress",
+            data=data,
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        urllib.request.urlopen(req, timeout=2)
+    except Exception:
+        pass
+
 
 @dataclass
 class Task:
@@ -29,6 +72,7 @@ class Task:
     params: dict = field(default_factory=dict)
     status: str = "pending"  # "pending" | "active" | "cancelled" | "error"
     result: dict | None = None
+    progress: dict | None = None  # {current, total, detail}
     created_at: float = field(default_factory=time.time)
     started_at: float | None = None
     finished_at: float | None = None
@@ -122,6 +166,11 @@ class TaskQueue:
         """True if there is an actively running task."""
         return self._current is not None and self._current.status == "active"
 
+    def clear_pending(self):
+        """Remove all pending tasks from the queue."""
+        with self._lock:
+            self._tasks.clear()
+
     def pop_next(self) -> Task | None:
         """Block until a task is available and queue is running."""
         while True:
@@ -136,6 +185,7 @@ class TaskQueue:
                 self._running = False
                 self._has_work.clear()
             self._broadcast({"event": "queue_idle", "state": self.get_state()})
+            _report_progress(0, 0, "idle", "")
 
     def subscribe(self, callback: Callable):
         self._subscribers.append(callback)
@@ -181,6 +231,13 @@ class TaskWorker(threading.Thread):
                 task.status = "cancelled"
                 task.result = {"error": str(e)}
                 task.finished_at = time.time()
+                cancel_detail = task.params.get("quest_name", "") or task.type
+                # Preserve last progress values so emu manager can show partial bar
+                prev = task.progress or {}
+                _report_progress(
+                    prev.get("current", 0), prev.get("total", 0),
+                    "cancelled", f"{cancel_detail} — Cancelled"
+                )
                 logger.info(f"Task {task.id} cancelled: {e}")
             except Exception as e:
                 # Error — stays in active slot
@@ -204,20 +261,120 @@ class TaskWorker(threading.Thread):
                     task.params.get("apple_kind", "gold")
                 )
                 normal_attack_only = task.params.get("normal_attack_only", False)
+                total = sum(q["count"] for q in task.params["quests"])
+                quest_name = task.params.get("quest_name", "")
                 logger.info(f"Starting operation: quests={quests}, apples={apple_total}, normal_attack_only={normal_attack_only}")
                 fgoKernel.Turn.normalAttackOnly = normal_attack_only
                 try:
                     op = fgoKernel.Operation(quests, apple_total, apple_kind)
+                    # Inject progress callback
+                    op.on_progress = lambda op_inst: _report_progress(
+                        op_inst.battleCount, total, "running", quest_name
+                    )
+                    _report_progress(0, total, "running", quest_name)
                     op()
+                    _report_progress(total, total, "done", "Complete")
                 finally:
                     fgoKernel.Turn.normalAttackOnly = False
                 return {"battle_count": getattr(op, 'battleCount', 0)}
             case "battle":
                 logger.info("Starting battle")
+                _report_progress(0, 0, "running", "Battle in progress")
                 fgoKernel.Battle()()
                 return {}
+            case "wait":
+                minutes = task.params.get("minutes", 1)
+                logger.info(f"Waiting {minutes} minutes")
+                total_seconds = minutes * 60
+                elapsed = 0
+                while elapsed < total_seconds:
+                    remaining = (total_seconds - elapsed) // 60
+                    _report_progress(elapsed, total_seconds, "running", f"Waiting — {remaining} min left")
+                    chunk = min(30, total_seconds - elapsed)
+                    schedule.sleep(chunk)
+                    elapsed += chunk
+                _report_progress(total_seconds, total_seconds, "done", "Wait complete")
+                return {"waited_minutes": minutes}
+            case "stop_emulator":
+                logger.info("Stopping emulator")
+                _report_progress(0, 0, "running", "Stopping emulator")
+                self._call_emu_manager("stop")
+                # Reset device to disconnected state (stale handles would crash)
+                fgoDevice.device = fgoDevice.Device()
+                return {"stopped": True}
+            case "start_emulator":
+                logger.info("Starting emulator")
+                _report_progress(0, 0, "running", "Starting emulator")
+                self._call_emu_manager("launch")
+                # Wait for emulator to be ready, then reconnect device
+                self._wait_and_reconnect(timeout=120)
+                return {"started": True}
+            case "eat_apple":
+                apple_kind = task.params.get("apple_kind", "gold")
+                logger.info(f"Eating apple: {apple_kind}")
+                kind_index = ["gold", "silver", "bronze", "copper", "quartz"].index(apple_kind)
+                # Create a minimal Main instance to use eatApple
+                m = fgoKernel.Main(appleTotal=1, appleKind=kind_index)
+                m.eatApple()
+                return {"apple_kind": apple_kind}
             case _:
                 raise ValueError(f"Unknown task type: {task.type}")
+
+    def _call_emu_manager(self, action: str):
+        """Call emu manager to start/stop the emulator instance."""
+        if not _emu_manager_url:
+            raise RuntimeError("Emu manager URL not configured")
+        try:
+            req = urllib.request.Request(
+                f"{_emu_manager_url}/api/instances/{_instance_index}/{action}",
+                data=b"",
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            urllib.request.urlopen(req, timeout=30)
+        except Exception as e:
+            raise RuntimeError(f"Failed to {action} emulator: {e}")
+
+    def _wait_for_device(self, timeout: int = 120):
+        """Wait until the device becomes available after emulator start."""
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            schedule.sleep(5)
+            if fgoDevice.device.available:
+                logger.info("Device is ready")
+                return
+        raise RuntimeError(f"Device not ready after {timeout}s")
+
+    def _wait_and_reconnect(self, timeout: int = 120):
+        """Wait for emulator to boot, reconnect device, and verify screenshot works."""
+        pending = getattr(fgoDevice, '_pending_device_name', None)
+        if not pending:
+            raise RuntimeError("No device name configured for reconnection")
+        deadline = time.time() + timeout
+        # Phase 1: reconnect device
+        while time.time() < deadline:
+            time.sleep(5)
+            _report_progress(0, 0, "running", "Waiting for emulator...")
+            try:
+                fgoDevice.device = fgoDevice.Device(pending)
+                logger.info("Device reconnected: %s", fgoDevice.device.name)
+                break
+            except Exception:
+                continue
+        else:
+            raise RuntimeError(f"Device not ready after {timeout}s")
+        # Phase 2: wait until screenshot succeeds
+        while time.time() < deadline:
+            _report_progress(0, 0, "running", "Waiting for screen...")
+            try:
+                img = fgoDevice.device.screenshot()
+                if img is not None and img.size > 0:
+                    logger.info("Screenshot verified — emulator fully ready")
+                    return
+            except Exception:
+                pass
+            time.sleep(3)
+        raise RuntimeError(f"Screenshot not available after {timeout}s")
 
 
 # Module-level singleton

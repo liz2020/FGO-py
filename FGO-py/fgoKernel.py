@@ -495,6 +495,7 @@ class Main:
                 elif Detect.cache.isSpecialDropSuspended():fgoDevice.device.perform('\x1B',(300,))
                 fgoDevice.device.press('\xBB')
             self.battleCount+=1
+            if hasattr(self,'on_progress')and self.on_progress:self.on_progress(self)
             logger.info(f'Battle {self.battleCount}')
             if self.battleProc():
                 battleResult=self.battleProc.result
