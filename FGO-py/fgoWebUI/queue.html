@@ -719,8 +719,10 @@ async function addToQueue() {
     const count = parseInt(document.getElementById('inputCount').value) || 1;
     const normalAttackOnly = document.getElementById('chkNormalAttack').checked;
     try {
+        const questName = findQuestName(quest) || quest.join('-');
         const params = {
             quests: [{ quest, count }],
+            quest_name: questName,
             apple_total: 0,
             apple_kind: 'gold',
         };
