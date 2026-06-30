@@ -450,6 +450,8 @@ function connectWS() {
     ws.onopen = () => {
         document.getElementById('connStatus').className = 'connection connected';
         document.getElementById('connStatus').querySelector('span:last-child').textContent = 'Connected';
+        // Sync auto-battle state on reconnect (in case we missed events while disconnected)
+        syncAutoBattleState();
     };
     ws.onclose = () => {
         document.getElementById('connStatus').className = 'connection';
@@ -460,6 +462,17 @@ function connectWS() {
         const msg = JSON.parse(e.data);
         handleEvent(msg);
     };
+}
+
+async function syncAutoBattleState() {
+    try {
+        const resp = await fetch(`${API}/api/control/auto-battle/status`);
+        const data = await resp.json();
+        if (autoBattleActive !== data.active) {
+            autoBattleActive = data.active;
+            render();
+        }
+    } catch (_) {}
 }
 
 function handleEvent(msg) {
@@ -975,6 +988,9 @@ function preventContext(e) { e.preventDefault(); }
 connectWS();
 fetchCatalog();
 fetchState();
+// Default live ON
+startLive();
+document.getElementById('btnLive').classList.add('active');
 </script>
 </body>
 </html>

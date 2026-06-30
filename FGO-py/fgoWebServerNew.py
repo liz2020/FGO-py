@@ -179,6 +179,11 @@ async def auto_battle_cancel():
     return {"ok": True}
 
 
+@app.get("/api/control/auto-battle/status")
+async def auto_battle_status():
+    return {"active": is_auto_battle_active()}
+
+
 # --- Manual mode ---
 
 _manual_mode = False

@@ -78,6 +78,7 @@
             color: var(--text-dim);
             margin-bottom: 12px;
             padding: 0 16px;
+            text-align: left;
         }
         .preview-area {
             background: #000;
@@ -157,7 +158,17 @@
         .btn:disabled { opacity: 0.4; cursor: not-allowed; }
         .btn-launch { background: var(--success); color: #1a1a2e; }
         .btn-stop { background: var(--primary); color: white; }
-        .btn-restart { background: var(--warning); color: #1a1a2e; }
+        .btn-stop-inline {
+            background: rgba(233, 69, 96, 0.15);
+            border: 1px solid rgba(233, 69, 96, 0.4);
+            color: var(--primary);
+            font-size: 0.75rem;
+            cursor: pointer;
+            padding: 2px 10px;
+            border-radius: 4px;
+            vertical-align: middle;
+        }
+        .btn-stop-inline:active { opacity: 0.5; }
         .btn-app { background: var(--surface); color: var(--text); border: 1px solid rgba(255,255,255,0.1); }
         .btn-script { background: rgba(78, 204, 163, 0.15); color: var(--success); border: 1px solid rgba(78, 204, 163, 0.3); }
         .section-label {
@@ -297,25 +308,32 @@
             return;
         }
         container.innerHTML = instances.map(inst => renderCard(inst, scripts, progressMap || {})).join('');
+
+        // Auto-subscribe live for running instances that aren't streaming yet
+        for (const inst of instances) {
+            if (inst.status === 'running' && !streaming[inst.index]) {
+                autoSubscribe(inst.index);
+            }
+        }
     }
 
     function renderCard(inst, scripts, progressMap) {
         const isRunning = inst.status === 'running';
         const statusClass = inst.status === 'running' ? 'running' :
                            inst.status === 'launching' ? 'launching' : 'stopped';
-        const statusIcon = isRunning ? '🟢' : '⚫';
+        const statusIcon = '';
 
         let buttons = '';
         if (!isRunning) {
             buttons = `<div class="btn-row">
                 <button class="btn btn-launch" onclick="action(${inst.index}, 'launch')">▶ Launch</button>
             </div>`;
-        } else {
-            buttons = `<div class="btn-row">
-                <button class="btn btn-stop" onclick="action(${inst.index}, 'stop')">⏹ Stop</button>
-                <button class="btn btn-restart" onclick="action(${inst.index}, 'restart')">🔄 Restart</button>
-            </div>`;
         }
+
+        // Stop button on meta line (only when running)
+        const stopBtn = isRunning
+            ? `<button class="btn-stop-inline" onclick="action(${inst.index}, 'stop')" title="Stop emulator">⏹ Stop</button> · `
+            : '';
 
         let preview = '';
         if (isRunning) {
@@ -353,8 +371,8 @@
                     progressHtml = `<div class="progress-text" style="font-size:0.8rem;color:var(--text-dim);margin-bottom:4px;">${prog.detail || prog.status}</div>`;
                 }
                 scriptBtns += progressHtml;
+                scriptBtns += `<button class="btn-stop-inline" onclick="stopScript('${r.name}', ${inst.index})">⏹ Stop</button> `;
                 scriptBtns += `<button class="btn btn-script" onclick="openScriptUI('${r.name}', ${inst.index})">→ ${r.display_name}</button>`;
-                scriptBtns += `<button class="btn btn-stop" onclick="stopScript('${r.name}', ${inst.index})">⏹</button>`;
             }
             for (const s of available) {
                 scriptBtns += `<button class="btn btn-app" onclick="startScript('${s.name}', ${inst.index})">▶ ${s.display_name}</button>`;
@@ -369,10 +387,10 @@
 
         return `<div class="instance-card" id="card-${inst.index}">
             <div class="card-header">
-                <h2>${statusIcon} ${inst.name}</h2>
+                <h2>${inst.name}</h2>
                 <span class="card-status ${statusClass}">${inst.status}</span>
             </div>
-            <div class="card-meta">Index ${inst.index} · ${inst.adb_serial}</div>
+            <div class="card-meta">${stopBtn}Index ${inst.index} · ${inst.adb_serial}</div>
             ${preview}
             ${buttons}
             ${scriptsHtml}
@@ -448,6 +466,17 @@
         const btn = document.getElementById(`btnLive-${index}`);
         if (badge) badge.classList.toggle('active', streaming[index]);
         if (btn) btn.classList.toggle('active', streaming[index]);
+    }
+
+    function autoSubscribe(index) {
+        // Wait for WebSocket to be ready, then subscribe
+        if (ws && ws.readyState === WebSocket.OPEN) {
+            streaming[index] = true;
+            ws.send(JSON.stringify({ action: 'subscribe_screenshot', index }));
+        } else {
+            // Retry after a short delay when WS connects
+            setTimeout(() => autoSubscribe(index), 500);
+        }
     }
 
     // --- Init ---
