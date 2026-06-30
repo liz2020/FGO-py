@@ -691,6 +691,10 @@ function findQuestName(tuple) {
 async function fetchState() {
     const res = await fetch(`${API}/api/queue`);
     state = await res.json();
+    // Restore progress from active task (e.g., after page reload)
+    if (state.active && state.active.progress) {
+        activeProgress = state.active.progress;
+    }
     render();
 }
 
