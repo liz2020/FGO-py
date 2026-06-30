@@ -281,13 +281,15 @@ class TaskWorker(threading.Thread):
                 logger.info("Stopping emulator")
                 _report_progress(0, 0, "running", "Stopping emulator")
                 self._call_emu_manager("stop")
+                # Reset device to disconnected state (stale handles would crash)
+                fgoDevice.device = fgoDevice.Device()
                 return {"stopped": True}
             case "start_emulator":
                 logger.info("Starting emulator")
                 _report_progress(0, 0, "running", "Starting emulator")
                 self._call_emu_manager("launch")
-                # Wait for emulator to be ready (device becomes available)
-                self._wait_for_device(timeout=120)
+                # Wait for emulator to be ready, then reconnect device
+                self._wait_and_reconnect(timeout=120)
                 return {"started": True}
             case "eat_apple":
                 apple_kind = task.params.get("apple_kind", "gold")
@@ -323,6 +325,22 @@ class TaskWorker(threading.Thread):
             if fgoDevice.device.available:
                 logger.info("Device is ready")
                 return
+        raise RuntimeError(f"Device not ready after {timeout}s")
+
+    def _wait_and_reconnect(self, timeout: int = 120):
+        """Wait for emulator to boot, then reconnect the device."""
+        pending = getattr(fgoDevice, '_pending_device_name', None)
+        if not pending:
+            raise RuntimeError("No device name configured for reconnection")
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            time.sleep(5)  # Use raw sleep (not schedule.sleep) to avoid stop check
+            try:
+                fgoDevice.device = fgoDevice.Device(pending)
+                logger.info("Device reconnected: %s", fgoDevice.device.name)
+                return
+            except Exception:
+                continue
         raise RuntimeError(f"Device not ready after {timeout}s")
 
 

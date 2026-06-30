@@ -231,7 +231,11 @@ def create_app() -> FastAPI:
             raise HTTPException(status_code=404, detail=f"Script '{name}' not found")
 
         b = get_backend()
-        serial = b.adb_serial(instance_index)
+        # Get ADB serial — may be unavailable if emulator is stopped
+        try:
+            serial = b.adb_serial(instance_index)
+        except Exception:
+            serial = f"127.0.0.1:{5555 + instance_index * 2}"  # default LDPlayer serial
 
         # Use the repo root as cwd for script processes
         import pathlib
