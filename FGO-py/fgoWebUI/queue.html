@@ -233,10 +233,24 @@
             margin-bottom: 6px;
             font-size: 0.85rem;
             cursor: grab;
-            transition: opacity 0.2s, transform 0.2s;
+            transition: opacity 0.2s, transform 0.15s, margin 0.15s;
         }
-        .queue-item.dragging { opacity: 0.4; }
-        .queue-item.drag-over { border: 1px dashed var(--success); }
+        .queue-item.dragging { opacity: 0.3; transform: scale(0.95); }
+        .queue-item.drag-above { margin-top: 36px; position: relative; }
+        .queue-item.drag-above::before {
+            content: '';
+            position: absolute;
+            top: -22px;
+            left: 0;
+            right: 0;
+            height: 4px;
+            background: var(--success);
+            border-radius: 2px;
+        }
+        .queue-item.drag-into-loop {
+            background: rgba(46, 204, 113, 0.12);
+            border: 1px solid var(--success);
+        }
         .queue-item .item-header {
             display: flex;
             align-items: center;
@@ -1120,66 +1134,78 @@ function describeTaskDetails(task) {
 // --- Drag and Drop ---
 let dragSrcId = null;
 
+let _dragDelegationSetup = false;
+
 function setupDragAndDrop() {
-    const items = document.querySelectorAll('.queue-item[draggable]');
+    const list = document.getElementById('queueList');
+
+    // Per-item: dragstart/dragend (must re-bind after innerHTML)
+    const items = list.querySelectorAll('.queue-item[draggable]');
     items.forEach(item => {
         item.addEventListener('dragstart', e => {
             dragSrcId = item.dataset.id;
             item.classList.add('dragging');
             e.dataTransfer.effectAllowed = 'move';
+            e.dataTransfer.setData('text/plain', item.dataset.id);
         });
         item.addEventListener('dragend', () => {
             item.classList.remove('dragging');
-            document.querySelectorAll('.queue-item.drag-over').forEach(el => el.classList.remove('drag-over'));
-            document.querySelectorAll('.loop-drop-zone.drag-over').forEach(el => el.classList.remove('drag-over'));
-        });
-        item.addEventListener('dragover', e => {
-            // Don't handle if the event target is inside a loop-drop-zone (let it bubble there instead)
-            if (e.target.closest('.loop-drop-zone')) return;
-            e.preventDefault();
-            e.dataTransfer.dropEffect = 'move';
-            if (item.dataset.id !== dragSrcId) item.classList.add('drag-over');
-        });
-        item.addEventListener('dragleave', e => {
-            if (e.target.closest('.loop-drop-zone')) return;
-            item.classList.remove('drag-over');
-        });
-        item.addEventListener('drop', e => {
-            if (e.target.closest('.loop-drop-zone')) return;
-            e.preventDefault();
-            item.classList.remove('drag-over');
-            if (item.dataset.id === dragSrcId) return;
-            reorderQueue(dragSrcId, item.dataset.id);
+            dragSrcId = null;
+            clearAllDragIndicators();
         });
     });
 
-    // Loop drop zones — dropping a task into a loop's children
-    const dropZones = document.querySelectorAll('.loop-drop-zone');
-    dropZones.forEach(zone => {
-        zone.addEventListener('dragover', e => {
-            e.preventDefault();
-            e.stopPropagation();
-            e.dataTransfer.dropEffect = 'move';
-            // Don't allow dropping a loop into itself
-            const loopId = zone.dataset.loopId;
-            if (dragSrcId !== loopId) {
-                zone.classList.add('drag-over');
-            }
-        });
-        zone.addEventListener('dragleave', e => {
-            e.stopPropagation();
-            zone.classList.remove('drag-over');
-        });
-        zone.addEventListener('drop', e => {
-            e.preventDefault();
-            e.stopPropagation();
-            zone.classList.remove('drag-over');
-            const loopId = zone.dataset.loopId;
-            if (dragSrcId && dragSrcId !== loopId) {
-                addChildToLoop(loopId, dragSrcId);
-            }
-        });
+    // Delegation on list: only attach once
+    if (_dragDelegationSetup) return;
+    _dragDelegationSetup = true;
+
+    list.addEventListener('dragover', e => {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+        clearAllDragIndicators();
+
+        const target = e.target.closest('.queue-item');
+        if (!target || target.dataset.id === dragSrcId) return;
+
+        // Check if hovering over a loop's children drop zone
+        const dropZone = e.target.closest('.loop-drop-zone');
+        if (dropZone && dropZone.dataset.loopId !== dragSrcId) {
+            target.classList.add('drag-into-loop');
+            return;
+        }
+
+        // Standard reorder: show green insertion line above this item
+        target.classList.add('drag-above');
     });
+
+    list.addEventListener('dragleave', e => {
+        if (!list.contains(e.relatedTarget)) {
+            clearAllDragIndicators();
+        }
+    });
+
+    list.addEventListener('drop', e => {
+        e.preventDefault();
+        clearAllDragIndicators();
+
+        const target = e.target.closest('.queue-item');
+        if (!target || !dragSrcId || target.dataset.id === dragSrcId) return;
+
+        // Check if dropped onto a loop's children zone
+        const dropZone = e.target.closest('.loop-drop-zone');
+        if (dropZone && dropZone.dataset.loopId !== dragSrcId) {
+            addChildToLoop(dropZone.dataset.loopId, dragSrcId);
+            return;
+        }
+
+        // Standard reorder
+        reorderQueue(dragSrcId, target.dataset.id);
+    });
+}
+
+function clearAllDragIndicators() {
+    document.querySelectorAll('.drag-above').forEach(el => el.classList.remove('drag-above'));
+    document.querySelectorAll('.drag-into-loop').forEach(el => el.classList.remove('drag-into-loop'));
 }
 
 async function reorderQueue(fromId, beforeId) {
