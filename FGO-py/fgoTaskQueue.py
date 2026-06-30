@@ -232,7 +232,12 @@ class TaskWorker(threading.Thread):
                 task.result = {"error": str(e)}
                 task.finished_at = time.time()
                 cancel_detail = task.params.get("quest_name", "") or task.type
-                _report_progress(0, 0, "cancelled", f"{cancel_detail} — Cancelled")
+                # Preserve last progress values so emu manager can show partial bar
+                prev = task.progress or {}
+                _report_progress(
+                    prev.get("current", 0), prev.get("total", 0),
+                    "cancelled", f"{cancel_detail} — Cancelled"
+                )
                 logger.info(f"Task {task.id} cancelled: {e}")
             except Exception as e:
                 # Error — stays in active slot
