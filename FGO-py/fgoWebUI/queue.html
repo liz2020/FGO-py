@@ -408,6 +408,36 @@
         <button class="btn-add" onclick="addToQueue()">+ Add to Queue</button>
     </div>
 
+    <!-- Add Task (system-level tasks) -->
+    <div class="section">
+        <h3>Add Task</h3>
+        <div class="form-row">
+            <label>Task</label>
+            <select id="selTaskType" onchange="onTaskTypeChange()">
+                <option value="wait">Wait</option>
+                <option value="eat_apple">Eat Apple</option>
+                <option value="stop_emulator">Stop Emulator</option>
+                <option value="start_emulator">Start Emulator</option>
+                <option value="stop_script">Stop Script</option>
+            </select>
+        </div>
+        <div class="form-row" id="taskParamWait">
+            <label>Minutes</label>
+            <input type="number" id="inputWaitMinutes" value="30" min="1" max="9999">
+        </div>
+        <div class="form-row" id="taskParamApple" style="display:none;">
+            <label>Apple</label>
+            <select id="selAppleKind">
+                <option value="gold">Gold</option>
+                <option value="silver">Silver</option>
+                <option value="bronze">Bronze</option>
+                <option value="copper">Copper</option>
+                <option value="quartz">Quartz</option>
+            </select>
+        </div>
+        <button class="btn-add" onclick="addTaskToQueue()">+ Add to Queue</button>
+    </div>
+
 <script>
 const API = (() => {
     const match = location.pathname.match(/^(\/scripts\/[^/]+\/\d+)\//);
@@ -596,6 +626,11 @@ function describeTask(task) {
         return `${name} ×${count}`;
     }
     if (task.type === 'battle') return 'Battle';
+    if (task.type === 'wait') return `Wait ${task.params.minutes || '?'} min`;
+    if (task.type === 'eat_apple') return `Eat Apple (${task.params.apple_kind || 'gold'})`;
+    if (task.type === 'stop_emulator') return 'Stop Emulator';
+    if (task.type === 'start_emulator') return 'Start Emulator';
+    if (task.type === 'stop_script') return 'Stop Script';
     return task.type;
 }
 
@@ -655,6 +690,32 @@ async function addToQueue() {
         await fetchState();
     } catch (e) {
         console.error('Add to queue error:', e);
+    }
+}
+
+function onTaskTypeChange() {
+    const type = document.getElementById('selTaskType').value;
+    document.getElementById('taskParamWait').style.display = type === 'wait' ? '' : 'none';
+    document.getElementById('taskParamApple').style.display = type === 'eat_apple' ? '' : 'none';
+}
+
+async function addTaskToQueue() {
+    const type = document.getElementById('selTaskType').value;
+    let params = {};
+    if (type === 'wait') {
+        params.minutes = parseInt(document.getElementById('inputWaitMinutes').value) || 1;
+    } else if (type === 'eat_apple') {
+        params.apple_kind = document.getElementById('selAppleKind').value;
+    }
+    try {
+        await fetch(`${API}/api/queue`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ type, params })
+        });
+        await fetchState();
+    } catch (e) {
+        console.error('Add task error:', e);
     }
 }
 
@@ -812,6 +873,11 @@ function describeTaskDetails(task) {
         return lines.join('<br>') || 'No details';
     }
     if (task.type === 'battle') return 'One-off battle';
+    if (task.type === 'wait') return `Wait for ${task.params.minutes || '?'} minutes`;
+    if (task.type === 'eat_apple') return `Use ${task.params.apple_kind || 'gold'} apple to restore AP`;
+    if (task.type === 'stop_emulator') return 'Stop the emulator instance';
+    if (task.type === 'start_emulator') return 'Start the emulator instance';
+    if (task.type === 'stop_script') return 'Stop script and clear queue';
     return task.type;
 }
 
