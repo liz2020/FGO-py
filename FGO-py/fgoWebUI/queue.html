@@ -294,6 +294,63 @@
             padding: 12px 0;
         }
 
+        /* Loop task inline controls */
+        .loop-controls {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            margin-left: 8px;
+            font-size: 0.8rem;
+        }
+        .loop-controls button {
+            background: var(--surface);
+            border: 1px solid rgba(160, 160, 176, 0.3);
+            color: var(--text);
+            border-radius: 4px;
+            width: 24px;
+            height: 24px;
+            font-size: 0.85rem;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .loop-controls button:disabled {
+            opacity: 0.3;
+            cursor: not-allowed;
+        }
+        .loop-controls .loop-count {
+            min-width: 20px;
+            text-align: center;
+            font-weight: 600;
+        }
+        .loop-controls.dimmed .loop-count,
+        .loop-controls.dimmed button {
+            opacity: 0.35;
+        }
+        .loop-controls label {
+            font-size: 0.75rem;
+            color: var(--text-dim);
+            display: flex;
+            align-items: center;
+            gap: 3px;
+            margin-left: 6px;
+            cursor: pointer;
+        }
+        .loop-controls label input[type="checkbox"] {
+            margin: 0;
+        }
+        .loop-children {
+            margin-top: 6px;
+            padding-left: 16px;
+            border-left: 2px solid rgba(160, 160, 176, 0.2);
+            font-size: 0.8rem;
+            color: var(--text-dim);
+        }
+        .loop-child-item {
+            padding: 3px 0;
+        }
+
         /* Quest Selector */
         .form-row {
             display: flex;
@@ -417,11 +474,25 @@
                 <option value="wait">Wait</option>
                 <option value="stop_emulator">Stop Emulator</option>
                 <option value="start_emulator">Start Emulator</option>
+                <option value="loop">Loop (Repeat Group)</option>
             </select>
         </div>
         <div class="form-row" id="taskParamWait">
             <label>Minutes</label>
             <input type="number" id="inputWaitMinutes" value="30" min="1" max="9999">
+        </div>
+        <div id="taskParamLoop" style="display:none">
+            <div class="form-row">
+                <label>Repeat</label>
+                <input type="number" id="inputLoopCount" value="3" min="1" max="999" style="width:60px">
+            </div>
+            <div class="form-check">
+                <input type="checkbox" id="chkLoopInfinite" onchange="document.getElementById('inputLoopCount').disabled = this.checked">
+                <label for="chkLoopInfinite">Infinite</label>
+            </div>
+            <div style="font-size:0.75rem; color:var(--text-dim); margin-top:4px">
+                Add tasks to the loop after creating it by dragging them in, or use the Add Quest / Add Task sections above.
+            </div>
         </div>
         <button class="btn-add" onclick="addTaskToQueue()">+ Add to Queue</button>
     </div>
@@ -623,6 +694,9 @@ function renderPending() {
         return;
     }
     el.innerHTML = state.pending.map((task, idx) => {
+        if (task.type === 'loop') {
+            return renderLoopItem(task, idx);
+        }
         const desc = describeTask(task);
         const details = describeTaskDetails(task);
         const expanded = expandedIds.has(task.id);
@@ -638,6 +712,32 @@ function renderPending() {
         </li>`;
     }).join('');
     setupDragAndDrop();
+}
+
+function renderLoopItem(task, idx) {
+    const infinite = task.params.infinite || false;
+    const remaining = task.params.remaining || 0;
+    const dimmed = infinite ? ' dimmed' : '';
+    const children = task.children || [];
+    const childrenHtml = children.map(c =>
+        `<div class="loop-child-item">• ${describeTask(c)}</div>`
+    ).join('');
+    return `<li class="queue-item" draggable="true" data-id="${task.id}" data-idx="${idx}">
+        <div class="item-header">
+            <span class="drag-handle">≡</span>
+            <span class="info">🔁 Loop</span>
+            <span class="loop-controls${dimmed}">
+                <button onclick="adjustLoop('${task.id}', -1)" ${infinite || remaining <= 1 ? 'disabled' : ''}>−</button>
+                <span class="loop-count">${remaining}</span>
+                <button onclick="adjustLoop('${task.id}', 1)" ${infinite ? 'disabled' : ''}>+</button>
+            </span>
+            <span class="loop-controls">
+                <label><input type="checkbox" ${infinite ? 'checked' : ''} onchange="toggleInfinite('${task.id}', this.checked)"> ∞</label>
+            </span>
+            <button class="remove-btn" onclick="removeFromQueue('${task.id}')">🗑</button>
+        </div>
+        <div class="loop-children">${childrenHtml || '<span>No tasks in loop</span>'}</div>
+    </li>`;
 }
 
 function renderButton() {
@@ -672,6 +772,13 @@ function describeTask(task) {
     if (task.type === 'wait') return `Wait ${task.params.minutes || '?'} min`;
     if (task.type === 'stop_emulator') return 'Stop Emulator';
     if (task.type === 'start_emulator') return 'Start Emulator';
+    if (task.type === 'loop') {
+        const n = task.children ? task.children.length : 0;
+        const infinite = task.params.infinite;
+        const rem = task.params.remaining || 0;
+        const label = infinite ? '∞' : `×${rem}`;
+        return `🔁 Loop ${label} (${n} tasks)`;
+    }
     return task.type;
 }
 
@@ -743,19 +850,28 @@ async function addToQueue() {
 function onTaskTypeChange() {
     const type = document.getElementById('selTaskType').value;
     document.getElementById('taskParamWait').style.display = type === 'wait' ? '' : 'none';
+    document.getElementById('taskParamLoop').style.display = type === 'loop' ? '' : 'none';
 }
 
 async function addTaskToQueue() {
     const type = document.getElementById('selTaskType').value;
     let params = {};
+    let children = [];
     if (type === 'wait') {
         params.minutes = parseInt(document.getElementById('inputWaitMinutes').value) || 1;
+    } else if (type === 'loop') {
+        const infinite = document.getElementById('chkLoopInfinite').checked;
+        const remaining = parseInt(document.getElementById('inputLoopCount').value) || 3;
+        params = { remaining, infinite };
+        // Loop starts empty — user adds children after creation
     }
     try {
+        const body = { type, params };
+        if (type === 'loop') body.children = children;
         await fetch(`${API}/api/queue`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ type, params })
+            body: JSON.stringify(body)
         });
         await fetchState();
     } catch (e) {
@@ -765,6 +881,27 @@ async function addTaskToQueue() {
 
 async function removeFromQueue(taskId) {
     await fetch(`${API}/api/queue/${taskId}`, { method: 'DELETE' });
+    await fetchState();
+}
+
+async function adjustLoop(loopId, delta) {
+    const loop = state.pending.find(t => t.id === loopId);
+    if (!loop) return;
+    const newRemaining = Math.max(1, (loop.params.remaining || 1) + delta);
+    await fetch(`${API}/api/queue/${loopId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ remaining: newRemaining })
+    });
+    await fetchState();
+}
+
+async function toggleInfinite(loopId, checked) {
+    await fetch(`${API}/api/queue/${loopId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ infinite: checked })
+    });
     await fetchState();
 }
 
