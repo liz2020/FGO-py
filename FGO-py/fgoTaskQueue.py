@@ -214,17 +214,13 @@ class TaskQueue:
             return True
 
     def remove_child_from_loop(self, loop_id: str, child_id: str) -> bool:
-        """Remove a child from a loop and place it back in the queue after the loop."""
+        """Remove a child from a loop (deletes it entirely)."""
         with self._lock:
             for i, t in enumerate(self._tasks):
                 if t.id == loop_id and t.type == "loop":
                     for j, child in enumerate(t.children):
                         if child.id == child_id:
-                            removed = t.children.pop(j)
-                            # Insert after the loop task in the queue
-                            new_tasks = list(self._tasks)
-                            new_tasks.insert(i + 1, removed)
-                            self._tasks = deque(new_tasks)
+                            t.children.pop(j)
                             return True
         return False
 
