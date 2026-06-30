@@ -294,10 +294,10 @@ Loop tasks render as a collapsible group with **inline controls** for adjusting 
 - **`☐ Infinite`** checkbox calls `PATCH /api/queue/{id}` with `{"infinite": true/false}`.
 - When infinite is checked, the `[−] N [+]` controls are **dimmed/disabled** (remaining is irrelevant).
 
-When infinite is active:
+When infinite is active, the `[−] / [+]` buttons and count are **dimmed** but still show the current `remaining` value. This way, unchecking infinite immediately restores a meaningful count:
 
 ```
-│ 2. 🔁 Loop  [−] — [+]  ☑ Infinite         [🗑]  │
+│ 2. 🔁 Loop  [−] 3 [+]  ☑ Infinite         [🗑]  │  ← 3 is dimmed
 │    ├─ Farm 雅戈泰 ×10                             │
 │    └─ Wait 120 min                                │
 ```
