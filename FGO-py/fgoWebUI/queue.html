@@ -282,6 +282,19 @@
             cursor: pointer;
             padding: 4px 8px;
         }
+        .queue-item .add-to-loop-btn {
+            background: none;
+            border: 1px solid rgba(46, 204, 113, 0.4);
+            color: var(--success);
+            font-size: 0.9rem;
+            cursor: pointer;
+            padding: 2px 6px;
+            border-radius: 4px;
+            margin-left: 6px;
+        }
+        .queue-item .add-to-loop-btn:hover {
+            background: rgba(46, 204, 113, 0.15);
+        }
         .queue-item .item-details {
             display: none;
             margin-top: 8px;
@@ -720,6 +733,9 @@ function renderPending() {
         el.innerHTML = '<li class="queue-empty">No tasks in queue</li>';
         return;
     }
+    // Check if there are any loops to show "add to loop" buttons
+    const loops = state.pending.filter(t => t.type === 'loop');
+
     el.innerHTML = state.pending.map((task, idx) => {
         if (task.type === 'loop') {
             return renderLoopItem(task, idx);
@@ -727,11 +743,16 @@ function renderPending() {
         const desc = describeTask(task);
         const details = describeTaskDetails(task);
         const expanded = expandedIds.has(task.id);
+        // Show "add to loop" button if loops exist
+        const addToLoopBtn = loops.length > 0
+            ? `<button class="add-to-loop-btn" onclick="addToFirstLoop('${task.id}')" title="Add to loop">⊕</button>`
+            : '';
         return `<li class="queue-item" data-id="${task.id}" data-idx="${idx}">
             <div class="item-header">
                 <span class="drag-handle">≡</span>
                 <span class="info">${desc}</span>
                 <span class="status-badge pending">Pending</span>
+                ${addToLoopBtn}
                 <button class="expand-btn${expanded ? ' expanded' : ''}" onclick="toggleExpand(this, '${task.id}')">▸</button>
                 <button class="remove-btn" onclick="removeFromQueue('${task.id}')">🗑</button>
             </div>
@@ -950,6 +971,17 @@ async function addChildToLoop(loopId, taskId) {
     }
 }
 
+async function addToFirstLoop(taskId) {
+    // If there's exactly one loop, add directly; otherwise let user pick
+    const loops = state.pending.filter(t => t.type === 'loop');
+    if (loops.length === 1) {
+        await addChildToLoop(loops[0].id, taskId);
+    } else if (loops.length > 1) {
+        // For now, add to the first loop. Could show a picker in the future.
+        await addChildToLoop(loops[0].id, taskId);
+    }
+}
+
 async function removeChildFromLoop(loopId, childId) {
     try {
         await fetch(`${API}/api/queue/${loopId}/remove-child`, {
@@ -1132,19 +1164,13 @@ function describeTaskDetails(task) {
 
 // --- Drag and Drop ---
 let _queueSortable = null;
-let _loopSortables = [];
 
 function setupDragAndDrop() {
-    // Destroy previous instances to avoid duplicates
     if (_queueSortable) { _queueSortable.destroy(); _queueSortable = null; }
-    _loopSortables.forEach(s => s.destroy());
-    _loopSortables = [];
 
     const list = document.getElementById('queueList');
 
-    // Main queue sortable
     _queueSortable = Sortable.create(list, {
-        group: { name: 'queue', pull: true, put: true },
         animation: 150,
         handle: '.drag-handle',
         draggable: '.queue-item',
@@ -1152,37 +1178,11 @@ function setupDragAndDrop() {
         chosenClass: 'sortable-chosen',
         dragClass: 'sortable-drag',
         onEnd: function(evt) {
-            // Item moved within the main queue — reorder
-            if (evt.from === evt.to && evt.from === list) {
-                const items = list.querySelectorAll('.queue-item');
-                const ids = Array.from(items).map(el => el.dataset.id);
-                submitReorder(ids);
-            }
+            if (evt.newIndex === evt.oldIndex) return;
+            const items = list.querySelectorAll(':scope > .queue-item');
+            const ids = Array.from(items).map(el => el.dataset.id);
+            submitReorder(ids);
         }
-    });
-
-    // Loop children sortables — allow dropping items into loops
-    const dropZones = list.querySelectorAll('.loop-drop-zone');
-    dropZones.forEach(zone => {
-        const loopId = zone.dataset.loopId;
-        const sortable = Sortable.create(zone, {
-            group: { name: 'queue', pull: true, put: function(to, from, dragEl) {
-                // Don't allow dropping a loop into itself
-                return dragEl.dataset.id !== loopId;
-            }},
-            animation: 150,
-            draggable: '.loop-child-item',
-            ghostClass: 'sortable-ghost',
-            onAdd: function(evt) {
-                // A task was dropped into this loop from the main queue
-                const taskId = evt.item.dataset.id;
-                if (taskId && taskId !== loopId) {
-                    addChildToLoop(loopId, taskId);
-                }
-                // Re-render will fix the DOM
-            }
-        });
-        _loopSortables.push(sortable);
     });
 }
 
