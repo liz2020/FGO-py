@@ -988,6 +988,9 @@ function preventContext(e) { e.preventDefault(); }
 connectWS();
 fetchCatalog();
 fetchState();
+// Default live ON
+startLive();
+document.getElementById('btnLive').classList.add('active');
 </script>
 </body>
 </html>
