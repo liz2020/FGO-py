@@ -346,9 +346,23 @@
             border-left: 2px solid rgba(160, 160, 176, 0.2);
             font-size: 0.8rem;
             color: var(--text-dim);
+            min-height: 28px;
+            border-radius: 4px;
+            transition: background 0.2s, border-color 0.2s;
+        }
+        .loop-children.drag-over {
+            background: rgba(46, 204, 113, 0.1);
+            border-left-color: var(--success);
         }
         .loop-child-item {
             padding: 3px 0;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        .loop-empty-hint {
+            font-style: italic;
+            opacity: 0.6;
         }
 
         /* Quest Selector */
@@ -720,7 +734,10 @@ function renderLoopItem(task, idx) {
     const dimmed = infinite ? ' dimmed' : '';
     const children = task.children || [];
     const childrenHtml = children.map(c =>
-        `<div class="loop-child-item">• ${describeTask(c)}</div>`
+        `<div class="loop-child-item" data-child-id="${c.id}">
+            <span>• ${describeTask(c)}</span>
+            <button class="remove-btn" onclick="removeChildFromLoop('${task.id}', '${c.id}')" style="font-size:0.8rem;padding:2px 4px;">✕</button>
+        </div>`
     ).join('');
     return `<li class="queue-item" draggable="true" data-id="${task.id}" data-idx="${idx}">
         <div class="item-header">
@@ -736,7 +753,9 @@ function renderLoopItem(task, idx) {
             </span>
             <button class="remove-btn" onclick="removeFromQueue('${task.id}')">🗑</button>
         </div>
-        <div class="loop-children">${childrenHtml || '<span>No tasks in loop</span>'}</div>
+        <div class="loop-children loop-drop-zone" data-loop-id="${task.id}">
+            ${childrenHtml || '<span class="loop-empty-hint">Drop tasks here</span>'}
+        </div>
     </li>`;
 }
 
@@ -903,6 +922,32 @@ async function toggleInfinite(loopId, checked) {
         body: JSON.stringify({ infinite: checked })
     });
     await fetchState();
+}
+
+async function addChildToLoop(loopId, taskId) {
+    try {
+        await fetch(`${API}/api/queue/${loopId}/add-child`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ task_id: taskId })
+        });
+        await fetchState();
+    } catch (e) {
+        console.error('Add child to loop error:', e);
+    }
+}
+
+async function removeChildFromLoop(loopId, childId) {
+    try {
+        await fetch(`${API}/api/queue/${loopId}/remove-child`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ task_id: childId })
+        });
+        await fetchState();
+    } catch (e) {
+        console.error('Remove child from loop error:', e);
+    }
 }
 
 async function takeScreenshot() {
@@ -1086,20 +1131,53 @@ function setupDragAndDrop() {
         item.addEventListener('dragend', () => {
             item.classList.remove('dragging');
             document.querySelectorAll('.queue-item.drag-over').forEach(el => el.classList.remove('drag-over'));
+            document.querySelectorAll('.loop-drop-zone.drag-over').forEach(el => el.classList.remove('drag-over'));
         });
         item.addEventListener('dragover', e => {
+            // Don't handle if the event target is inside a loop-drop-zone (let it bubble there instead)
+            if (e.target.closest('.loop-drop-zone')) return;
             e.preventDefault();
             e.dataTransfer.dropEffect = 'move';
             if (item.dataset.id !== dragSrcId) item.classList.add('drag-over');
         });
-        item.addEventListener('dragleave', () => {
+        item.addEventListener('dragleave', e => {
+            if (e.target.closest('.loop-drop-zone')) return;
             item.classList.remove('drag-over');
         });
         item.addEventListener('drop', e => {
+            if (e.target.closest('.loop-drop-zone')) return;
             e.preventDefault();
             item.classList.remove('drag-over');
             if (item.dataset.id === dragSrcId) return;
             reorderQueue(dragSrcId, item.dataset.id);
+        });
+    });
+
+    // Loop drop zones — dropping a task into a loop's children
+    const dropZones = document.querySelectorAll('.loop-drop-zone');
+    dropZones.forEach(zone => {
+        zone.addEventListener('dragover', e => {
+            e.preventDefault();
+            e.stopPropagation();
+            e.dataTransfer.dropEffect = 'move';
+            // Don't allow dropping a loop into itself
+            const loopId = zone.dataset.loopId;
+            if (dragSrcId !== loopId) {
+                zone.classList.add('drag-over');
+            }
+        });
+        zone.addEventListener('dragleave', e => {
+            e.stopPropagation();
+            zone.classList.remove('drag-over');
+        });
+        zone.addEventListener('drop', e => {
+            e.preventDefault();
+            e.stopPropagation();
+            zone.classList.remove('drag-over');
+            const loopId = zone.dataset.loopId;
+            if (dragSrcId && dragSrcId !== loopId) {
+                addChildToLoop(loopId, dragSrcId);
+            }
         });
     });
 }
