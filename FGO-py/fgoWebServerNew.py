@@ -82,8 +82,9 @@ class QuestItem(BaseModel):
 
 
 class AddTaskRequest(BaseModel):
-    type: str  # "operation" | "battle"
+    type: str  # "operation" | "battle" | "loop" | ...
     params: dict = {}
+    children: list[dict] = []  # only for "loop" tasks
 
 
 class MoveRequest(BaseModel):
@@ -92,6 +93,15 @@ class MoveRequest(BaseModel):
 
 class ReorderRequest(BaseModel):
     ids: list[str]
+
+
+class LoopPatchRequest(BaseModel):
+    remaining: int | None = None
+    infinite: bool | None = None
+
+
+class LoopChildRequest(BaseModel):
+    task_id: str
 
 
 # --- REST endpoints ---
@@ -107,14 +117,28 @@ async def get_queue():
     return task_queue.get_state()
 
 
-VALID_TASK_TYPES = ("operation", "battle", "wait", "stop_emulator", "start_emulator")
+VALID_TASK_TYPES = ("operation", "battle", "wait", "stop_emulator", "start_emulator", "loop")
+VALID_CHILD_TYPES = ("operation", "battle", "wait", "stop_emulator", "start_emulator")
 
 
 @app.post("/api/queue")
 async def add_task(req: AddTaskRequest):
     if req.type not in VALID_TASK_TYPES:
         raise HTTPException(400, f"Unknown task type: {req.type}")
-    task = Task(type=req.type, params=req.params)
+    if req.type == "loop":
+        # Validate loop params
+        remaining = req.params.get("remaining", 1)
+        infinite = req.params.get("infinite", False)
+        if not infinite and remaining < 1:
+            raise HTTPException(400, "remaining must be >= 1")
+        children = []
+        for cd in req.children:
+            if cd.get("type") not in VALID_CHILD_TYPES:
+                raise HTTPException(400, f"Invalid child task type: {cd.get('type')}")
+            children.append(Task(type=cd["type"], params=cd.get("params", {})))
+        task = Task(type="loop", params={"remaining": remaining, "infinite": infinite}, children=children)
+    else:
+        task = Task(type=req.type, params=req.params)
     task_queue.add(task)
     state = task_queue.get_state()
     ws_manager.enqueue({"event": "state_updated", "state": state})
@@ -125,6 +149,36 @@ async def add_task(req: AddTaskRequest):
 async def remove_task(task_id: str):
     if not task_queue.remove(task_id):
         raise HTTPException(404, "Task not found in queue")
+    state = task_queue.get_state()
+    ws_manager.enqueue({"event": "state_updated", "state": state})
+    return {"ok": True}
+
+
+@app.patch("/api/queue/{loop_id}")
+async def patch_loop(loop_id: str, req: LoopPatchRequest):
+    """Update a pending loop task's remaining count and/or infinite flag."""
+    if not task_queue.update_loop(loop_id, req.remaining, req.infinite):
+        raise HTTPException(404, "Loop task not found in queue")
+    state = task_queue.get_state()
+    ws_manager.enqueue({"event": "state_updated", "state": state})
+    return {"ok": True}
+
+
+@app.post("/api/queue/{loop_id}/add-child")
+async def add_child(loop_id: str, req: LoopChildRequest):
+    """Move a pending task into a loop's children list."""
+    if not task_queue.add_child_to_loop(loop_id, req.task_id):
+        raise HTTPException(400, "Loop or task not found, or task is a loop")
+    state = task_queue.get_state()
+    ws_manager.enqueue({"event": "state_updated", "state": state})
+    return {"ok": True}
+
+
+@app.post("/api/queue/{loop_id}/remove-child")
+async def remove_child(loop_id: str, req: LoopChildRequest):
+    """Remove a child from a loop and place it back in the pending queue."""
+    if not task_queue.remove_child_from_loop(loop_id, req.task_id):
+        raise HTTPException(404, "Loop or child not found")
     state = task_queue.get_state()
     ws_manager.enqueue({"event": "state_updated", "state": state})
     return {"ok": True}

@@ -12,6 +12,7 @@ import threading
 import time
 import urllib.request
 import uuid
+import copy
 from collections import deque
 from dataclasses import dataclass, field, asdict
 from typing import Callable
@@ -68,7 +69,7 @@ def _report_progress(current: int, total: int, status: str = "running", detail: 
 @dataclass
 class Task:
     id: str = field(default_factory=lambda: uuid.uuid4().hex[:8])
-    type: str = ""  # "operation" | "battle"
+    type: str = ""  # "operation" | "battle" | "loop" | ...
     params: dict = field(default_factory=dict)
     status: str = "pending"  # "pending" | "active" | "cancelled" | "error"
     result: dict | None = None
@@ -76,9 +77,13 @@ class Task:
     created_at: float = field(default_factory=time.time)
     started_at: float | None = None
     finished_at: float | None = None
+    children: list['Task'] = field(default_factory=list)  # only used by "loop" tasks
 
     def to_dict(self):
-        return asdict(self)
+        d = asdict(self)
+        # asdict recursively converts children, but they become plain dicts —
+        # which is exactly what we want for serialization
+        return d
 
 
 class TaskQueue:
@@ -171,6 +176,54 @@ class TaskQueue:
         with self._lock:
             self._tasks.clear()
 
+    def find_loop(self, loop_id: str) -> Task | None:
+        """Find a loop task in the pending queue by ID."""
+        with self._lock:
+            for t in self._tasks:
+                if t.id == loop_id and t.type == "loop":
+                    return t
+        return None
+
+    def update_loop(self, loop_id: str, remaining: int | None = None, infinite: bool | None = None) -> bool:
+        """Update a pending loop task's remaining count and/or infinite flag."""
+        with self._lock:
+            for t in self._tasks:
+                if t.id == loop_id and t.type == "loop":
+                    if remaining is not None:
+                        t.params["remaining"] = max(1, remaining)
+                    if infinite is not None:
+                        t.params["infinite"] = infinite
+                    return True
+        return False
+
+    def add_child_to_loop(self, loop_id: str, task_id: str) -> bool:
+        """Move a pending task into a loop's children list."""
+        with self._lock:
+            loop = None
+            task_idx = None
+            for t in self._tasks:
+                if t.id == loop_id and t.type == "loop":
+                    loop = t
+                if t.id == task_id:
+                    task_idx = t
+            if not loop or not task_idx or task_idx.type == "loop":
+                return False
+            # Remove from queue and add to loop's children
+            self._tasks = deque(t for t in self._tasks if t.id != task_id)
+            loop.children.append(task_idx)
+            return True
+
+    def remove_child_from_loop(self, loop_id: str, child_id: str) -> bool:
+        """Remove a child from a loop (deletes it entirely)."""
+        with self._lock:
+            for i, t in enumerate(self._tasks):
+                if t.id == loop_id and t.type == "loop":
+                    for j, child in enumerate(t.children):
+                        if child.id == child_id:
+                            t.children.pop(j)
+                            return True
+        return False
+
     def pop_next(self) -> Task | None:
         """Block until a task is available and queue is running."""
         while True:
@@ -212,6 +265,11 @@ class TaskWorker(threading.Thread):
             if task is None:
                 continue
 
+            # Handle loop tasks: unfold one iteration, don't execute
+            if task.type == "loop":
+                self._unfold_loop(task)
+                continue
+
             self.queue._current = task
             task.status = "active"
             task.started_at = time.time()
@@ -251,6 +309,34 @@ class TaskWorker(threading.Thread):
                     "task": task.to_dict(),
                     "state": self.queue.get_state(),
                 })
+
+    def _unfold_loop(self, task: Task):
+        """Handle a loop task: unfold one iteration or discard if done."""
+        infinite = task.params.get("infinite", False)
+        remaining = task.params.get("remaining", 0)
+
+        if (infinite or remaining > 0) and task.children:
+            if not infinite:
+                task.params["remaining"] = remaining - 1
+            # Deep-copy children with fresh IDs
+            copies = []
+            for child in task.children:
+                c = copy.deepcopy(child)
+                c.id = uuid.uuid4().hex[:8]
+                c.status = "pending"
+                c.result = None
+                c.progress = None
+                c.started_at = None
+                c.finished_at = None
+                copies.append(c)
+            with self.queue._lock:
+                for item in reversed(copies + [task]):
+                    self.queue._tasks.appendleft(item)
+            logger.info(f"Loop {task.id} unfolded: {'∞' if infinite else remaining - 1} remaining, {len(copies)} children inserted")
+        else:
+            logger.info(f"Loop {task.id} finished (remaining=0)")
+
+        self.queue._broadcast({"event": "state_updated", "state": self.queue.get_state()})
 
     def _execute(self, task: Task) -> dict:
         match task.type:
