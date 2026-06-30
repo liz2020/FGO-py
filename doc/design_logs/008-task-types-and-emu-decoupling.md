@@ -150,47 +150,77 @@ Script executes "stop_emulator" task
 
 ## Script Status on Emu Dashboard (Emulator Offline)
 
-### Current Behavior
+### Current Behavior (from `emu/static/index.html`)
 
-The emu dashboard only renders the "→ FGO-py" link and script stop button when `instance.running == true`. Script status is hidden when the emulator is off.
+When emulator is **running**, the card shows:
+- Header: instance name + `[running]` badge
+- Meta: `⏹ Stop` inline button · Index · ADB serial
+- Preview area: 16:9 live screenshot with `● Live` toggle (auto-subscribed)
+- Automation section: progress bar + `⏹ Stop` script + `→ FGO-py` link
+
+When emulator is **stopped**, the card shows only:
+- Header: instance name + `[stopped]` badge
+- Meta: Index · ADB serial
+- `▶ Launch` button
+- **No preview, no script section at all**
 
 ### New Behavior
 
-Script status is **always visible** for registered instances:
+Preview area and script status are **always visible** regardless of emulator state:
 
 ```
-┌─ Instance: FGO-1 ────────────────┐
-│  [Stopped]                        │  ← emulator status
-│  Index 0 · IP --                  │
-│                                   │
-│  ┌─────────────────────────────┐  │
-│  │                             │  │
-│  │   (screenshot preview)      │  │  ← greyed out / placeholder when
-│  │   "Emulator offline"        │  │     emulator is stopped
-│  │                             │  │
-│  └─────────────────────────────┘  │
-│                                   │
-│  Script: ⏳ Waiting (restart in   │  ← visible even when emu is stopped
-│          12 min)                   │
-│  [Stop Script]  [→ FGO-py]       │
-└───────────────────────────────────┘
+┌─ Instance: FGO-1 ────────────────────────────┐
+│  FGO-1                          [stopped]     │
+│  Index 0 · 127.0.0.1:5555                    │
+│                                               │
+│  ┌─────────────────────────────────────────┐  │
+│  │                                         │  │
+│  │         Emulator offline                │  │  ← dimmed placeholder
+│  │                                         │  │
+│  └─────────────────────────────────────────┘  │
+│                                    [● Live]   │  ← disabled when offline
+│                                               │
+│  [           ▶ Launch            ]            │
+│                                               │
+│  ── Automation ──────────────────────────     │
+│  Script: ⏳ Waiting (restart in 12 min)       │  ← visible!
+│  [⏹ Stop]  [→ FGO-py]                        │
+└───────────────────────────────────────────────┘
 
-┌─ Instance: FGO-2 ────────────────┐
-│  [Running]                        │  ← emulator status
-│  Index 1 · IP 192.168.1.2        │
-│                                   │
-│  ┌─────────────────────────────┐  │
-│  │                             │  │
-│  │   (live screenshot)         │  │  ← normal live preview
-│  │                             │  │
-│  └─────────────────────────────┘  │
-│                                   │
-│  Script: Running — 冬木 #3 ×5    │
-│  [Stop Script]  [→ FGO-py]       │
-└───────────────────────────────────┘
+┌─ Instance: FGO-2 ────────────────────────────┐
+│  FGO-2                          [running]     │
+│  ⏹ Stop · Index 1 · 192.168.1.2:5556        │
+│                                               │
+│  ┌─────────────────────────────────────────┐  │
+│  │                                         │  │
+│  │        (live screenshot)                │  │  ← normal live preview
+│  │                                         │  │
+│  └─────────────────────────────────────────┘  │
+│                               ▶ LIVE [● Live] │
+│                                               │
+│  ── Automation ──────────────────────────     │
+│  ┃████████████░░░░░░░░┃ 3/5 冬木 T2          │  ← progress bar
+│  [⏹ Stop]  [→ FGO-py]                        │
+└───────────────────────────────────────────────┘
 ```
 
-When the emulator is offline, the preview area shows a dimmed placeholder with "Emulator offline" text instead of disappearing entirely.
+### Changes to `renderCard()`
+
+Currently the HTML rendering is gated on `isRunning`:
+
+```js
+// Current: preview only when running
+if (isRunning) { preview = `...`; }
+
+// Current: scripts section only when running
+if (isRunning) { scriptsHtml = `...`; }
+```
+
+New logic:
+1. **Preview area always renders** — when emulator is offline, show a dimmed placeholder ("Emulator offline"), disable the Live button
+2. **Automation section always renders** — script status comes from the FGO-py web server `/api/status`, which is reachable as long as the script process is alive (independent of emulator)
+3. **Launch button** still only appears when emulator is stopped
+4. **Stop inline button** on meta line still only appears when emulator is running
 
 ### Script States (exposed via API)
 
