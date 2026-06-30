@@ -176,9 +176,8 @@
             font-size: 0.9rem;
             cursor: pointer;
             padding: 4px 8px;
-            transition: transform 0.2s;
         }
-        .active-task .expand-btn.expanded { transform: rotate(90deg); }
+        .active-task .expand-btn.expanded { }
         .active-box .item-details {
             display: none;
             margin-top: 0;
@@ -264,9 +263,8 @@
             font-size: 0.9rem;
             cursor: pointer;
             padding: 4px 8px;
-            transition: transform 0.2s;
         }
-        .queue-item .expand-btn.expanded { transform: rotate(90deg); }
+        .queue-item .expand-btn.expanded { }
         .queue-item .status-badge {
             font-size: 0.75rem;
             padding: 2px 8px;
@@ -671,7 +669,7 @@ function renderActive() {
             el.innerHTML = `<div class="active-task">
                 <span class="info">${desc}</span>
                 <span class="status-badge">Running</span>
-                <button class="expand-btn expanded" onclick="toggleExpand(this, 'active')">▸</button>
+                <button class="expand-btn expanded" onclick="toggleExpand(this, 'active')">▾ Details</button>
             </div>
             <div class="item-details show">${progressBar}${details}</div>`;
         } else {
@@ -680,7 +678,7 @@ function renderActive() {
             el.innerHTML = `<div class="active-task" style="border-color: var(--primary);">
                 <span class="info">${desc}</span>
                 <span class="status-badge" style="background: rgba(233,69,96,0.2); color: var(--primary);">${label}</span>
-                <button class="expand-btn expanded" onclick="toggleExpand(this, 'active')">▸</button>
+                <button class="expand-btn expanded" onclick="toggleExpand(this, 'active')">▾ Details</button>
             </div>
             <div class="item-details show">${progressBar}${details}</div>`;
         }
