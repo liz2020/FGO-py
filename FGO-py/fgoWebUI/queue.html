@@ -522,8 +522,7 @@ function handleEvent(msg) {
             activeProgress = null;
             // Stop live when emulator is being shut down
             if (msg.task && msg.task.type === 'stop_emulator' && liveActive) {
-                stopLive();
-                document.getElementById('btnLive').classList.remove('active');
+                showEmulatorOffline();
             }
             render();
             break;
@@ -780,6 +779,11 @@ async function removeFromQueue(taskId) {
 async function takeScreenshot() {
     try {
         const res = await fetch(`${API}/api/screenshot`, { method: 'POST' });
+        if (res.status === 503) {
+            // Device offline — show placeholder and stop live
+            showEmulatorOffline();
+            return;
+        }
         const data = await res.json();
         const box = document.getElementById('screenshotBox');
         let img = box.querySelector('img');
@@ -797,6 +801,13 @@ async function takeScreenshot() {
     if (liveActive) {
         liveInterval = setTimeout(takeScreenshot, 100);
     }
+}
+
+function showEmulatorOffline() {
+    const box = document.getElementById('screenshotBox');
+    box.innerHTML = '<div class="no-image">Emulator offline</div>';
+    stopLive();
+    document.getElementById('btnLive').classList.remove('active');
 }
 
 // --- Quest selector ---
@@ -1106,9 +1117,18 @@ function preventContext(e) { e.preventDefault(); }
 connectWS();
 fetchCatalog();
 fetchState();
-// Default live ON
-startLive();
-document.getElementById('btnLive').classList.add('active');
+// Check device status before starting live
+fetch(`${API}/api/device-status`).then(r => r.json()).then(data => {
+    if (data.available) {
+        startLive();
+        document.getElementById('btnLive').classList.add('active');
+    } else {
+        showEmulatorOffline();
+    }
+}).catch(() => {
+    startLive();
+    document.getElementById('btnLive').classList.add('active');
+});
 </script>
 </body>
 </html>

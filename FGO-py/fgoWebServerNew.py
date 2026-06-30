@@ -337,6 +337,12 @@ async def ws_status(websocket: WebSocket):
         ws_manager.disconnect(websocket)
 
 
+@app.get("/api/device-status")
+async def device_status():
+    """Check if the emulator device is currently available."""
+    return {"available": fgoDevice.device.available}
+
+
 # --- Entry point ---
 
 def main(config=None, port: int = 15000):
