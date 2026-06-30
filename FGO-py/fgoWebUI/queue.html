@@ -234,14 +234,23 @@
             font-size: 0.85rem;
         }
         .queue-item .drag-handle { cursor: grab; }
-        .sortable-ghost {
-            opacity: 0.4;
-            background: rgba(46, 204, 113, 0.15);
+        .gu-mirror {
+            opacity: 0.85;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+            border-radius: 8px;
+            background: var(--surface);
+            list-style: none;
+        }
+        .gu-transit {
+            opacity: 0.3;
+            background: rgba(46, 204, 113, 0.1);
             border: 2px dashed var(--success);
             border-radius: 8px;
         }
-        .sortable-chosen { opacity: 0.9; }
-        .sortable-drag { opacity: 0.85; box-shadow: 0 4px 12px rgba(0,0,0,0.3); }
+        .loop-drop-zone.gu-over {
+            background: rgba(46, 204, 113, 0.12);
+            border-color: var(--success);
+        }
         .queue-item .item-header {
             display: flex;
             align-items: center;
@@ -535,7 +544,8 @@ const _STATIC_BASE = (() => {
     const match = location.pathname.match(/^(\/scripts\/[^/]+\/\d+)\//);
     return match ? match[1] + '/static' : '/static';
 })();
-document.write('<scr' + 'ipt src="' + _STATIC_BASE + '/lib/Sortable.min.js"></scr' + 'ipt>');
+document.write('<li' + 'nk rel="stylesheet" href="' + _STATIC_BASE + '/lib/dragula.min.css">');
+document.write('<scr' + 'ipt src="' + _STATIC_BASE + '/lib/dragula.min.js"></scr' + 'ipt>');
 </script>
 <script>
 const API = (() => {
@@ -768,7 +778,8 @@ function renderLoopItem(task, idx) {
     const dimmed = infinite ? ' dimmed' : '';
     const children = task.children || [];
     const childrenHtml = children.map(c =>
-        `<div class="loop-child-item" data-child-id="${c.id}">
+        `<div class="loop-child-item queue-item" data-id="${c.id}" data-child-id="${c.id}">
+            <span class="drag-handle">≡</span>
             <span>• ${describeTask(c)}</span>
             <button class="remove-btn" onclick="removeChildFromLoop('${task.id}', '${c.id}')" style="font-size:0.8rem;padding:2px 4px;">✕</button>
         </div>`
@@ -1163,25 +1174,72 @@ function describeTaskDetails(task) {
 }
 
 // --- Drag and Drop ---
-let _queueSortable = null;
+let _drake = null;
 
 function setupDragAndDrop() {
-    if (_queueSortable) { _queueSortable.destroy(); _queueSortable = null; }
+    if (_drake) { _drake.destroy(); _drake = null; }
 
     const list = document.getElementById('queueList');
+    const loopZones = Array.from(list.querySelectorAll('.loop-drop-zone'));
 
-    _queueSortable = Sortable.create(list, {
-        animation: 150,
-        handle: '.drag-handle',
-        draggable: '.queue-item',
-        ghostClass: 'sortable-ghost',
-        chosenClass: 'sortable-chosen',
-        dragClass: 'sortable-drag',
-        onEnd: function(evt) {
-            if (evt.newIndex === evt.oldIndex) return;
+    // All containers: main list + each loop's children zone
+    _drake = dragula([list, ...loopZones], {
+        moves: function(el, source, handle) {
+            // Walk up from clicked element to find if a .drag-handle was clicked
+            let node = handle;
+            while (node && node !== el) {
+                if (node.classList && node.classList.contains('drag-handle')) return true;
+                node = node.parentElement;
+            }
+            return false;
+        },
+        accepts: function(el, target, source, sibling) {
+            // Loop items cannot be dragged INTO another loop
+            if (el.dataset.id) {
+                const task = state.pending.find(t => t.id === el.dataset.id);
+                if (task && task.type === 'loop' && target.classList.contains('loop-drop-zone')) {
+                    return false;
+                }
+            }
+            return true;
+        },
+        revertOnSpill: true
+    });
+
+    _drake.on('drop', function(el, target, source, sibling) {
+        if (!target) return;
+
+        const taskId = el.dataset.id;
+        if (!taskId) return;
+
+        if (target.classList.contains('loop-drop-zone')) {
+            // Dropped into a loop
+            const loopId = target.dataset.loopId;
+            if (source === list) {
+                // Moving from main queue into loop
+                addChildToLoop(loopId, taskId);
+            }
+        } else if (target === list && source.classList.contains('loop-drop-zone')) {
+            // Dragged OUT of a loop back to main queue
+            const loopId = source.dataset.loopId;
+            removeChildFromLoop(loopId, el.dataset.childId || taskId);
+        } else if (target === list && source === list) {
+            // Reorder within main queue
             const items = list.querySelectorAll(':scope > .queue-item');
-            const ids = Array.from(items).map(el => el.dataset.id);
+            const ids = Array.from(items).map(item => item.dataset.id);
             submitReorder(ids);
+        }
+    });
+
+    // Visual feedback when hovering over a loop zone
+    _drake.on('over', function(el, container) {
+        if (container.classList.contains('loop-drop-zone')) {
+            container.classList.add('gu-over');
+        }
+    });
+    _drake.on('out', function(el, container) {
+        if (container.classList.contains('loop-drop-zone')) {
+            container.classList.remove('gu-over');
         }
     });
 }
