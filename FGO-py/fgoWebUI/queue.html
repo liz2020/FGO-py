@@ -501,14 +501,14 @@ function handleEvent(msg) {
             if (msg.state) {
                 state = msg.state;
             }
-            activeProgress = null;
+            activeProgress = (state.active && state.active.progress) || null;
             render();
             break;
         case 'task_started':
             if (msg.state) {
                 state = msg.state;
             }
-            activeProgress = null;
+            activeProgress = (state.active && state.active.progress) || null;
             // Stop live when emulator is being shut down
             if (msg.task && msg.task.type === 'stop_emulator' && liveActive) {
                 showEmulatorOffline();
@@ -519,8 +519,7 @@ function handleEvent(msg) {
             if (msg.state) {
                 state = msg.state;
             }
-            activeProgress = null;
-            // Resume live when emulator has started
+            activeProgress = (state.active && state.active.progress) || null;
             if (msg.task && msg.task.type === 'start_emulator' && msg.task.status === 'done' && !liveActive) {
                 startLive();
                 document.getElementById('btnLive').classList.add('active');
