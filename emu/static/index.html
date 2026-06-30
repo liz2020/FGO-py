@@ -157,7 +157,17 @@
         .btn:disabled { opacity: 0.4; cursor: not-allowed; }
         .btn-launch { background: var(--success); color: #1a1a2e; }
         .btn-stop { background: var(--primary); color: white; }
-        .btn-restart { background: var(--warning); color: #1a1a2e; }
+        .btn-stop-inline {
+            background: none;
+            border: none;
+            color: var(--primary);
+            font-size: 1.1rem;
+            cursor: pointer;
+            padding: 2px 6px;
+            opacity: 0.8;
+            vertical-align: middle;
+        }
+        .btn-stop-inline:active { opacity: 0.5; }
         .btn-app { background: var(--surface); color: var(--text); border: 1px solid rgba(255,255,255,0.1); }
         .btn-script { background: rgba(78, 204, 163, 0.15); color: var(--success); border: 1px solid rgba(78, 204, 163, 0.3); }
         .section-label {
@@ -297,6 +307,13 @@
             return;
         }
         container.innerHTML = instances.map(inst => renderCard(inst, scripts, progressMap || {})).join('');
+
+        // Auto-subscribe live for running instances that aren't streaming yet
+        for (const inst of instances) {
+            if (inst.status === 'running' && !streaming[inst.index]) {
+                autoSubscribe(inst.index);
+            }
+        }
     }
 
     function renderCard(inst, scripts, progressMap) {
@@ -310,12 +327,12 @@
             buttons = `<div class="btn-row">
                 <button class="btn btn-launch" onclick="action(${inst.index}, 'launch')">▶ Launch</button>
             </div>`;
-        } else {
-            buttons = `<div class="btn-row">
-                <button class="btn btn-stop" onclick="action(${inst.index}, 'stop')">⏹ Stop</button>
-                <button class="btn btn-restart" onclick="action(${inst.index}, 'restart')">🔄 Restart</button>
-            </div>`;
         }
+
+        // Stop button inline after name (only when running)
+        const stopBtn = isRunning
+            ? `<button class="btn-stop-inline" onclick="event.stopPropagation(); action(${inst.index}, 'stop')" title="Stop">⏹</button>`
+            : '';
 
         let preview = '';
         if (isRunning) {
@@ -369,7 +386,7 @@
 
         return `<div class="instance-card" id="card-${inst.index}">
             <div class="card-header">
-                <h2>${statusIcon} ${inst.name}</h2>
+                <h2>${statusIcon} ${inst.name} ${stopBtn}</h2>
                 <span class="card-status ${statusClass}">${inst.status}</span>
             </div>
             <div class="card-meta">Index ${inst.index} · ${inst.adb_serial}</div>
@@ -448,6 +465,17 @@
         const btn = document.getElementById(`btnLive-${index}`);
         if (badge) badge.classList.toggle('active', streaming[index]);
         if (btn) btn.classList.toggle('active', streaming[index]);
+    }
+
+    function autoSubscribe(index) {
+        // Wait for WebSocket to be ready, then subscribe
+        if (ws && ws.readyState === WebSocket.OPEN) {
+            streaming[index] = true;
+            ws.send(JSON.stringify({ action: 'subscribe_screenshot', index }));
+        } else {
+            // Retry after a short delay when WS connects
+            setTimeout(() => autoSubscribe(index), 500);
+        }
     }
 
     // --- Init ---

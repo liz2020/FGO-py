@@ -125,6 +125,12 @@ def create_app() -> FastAPI:
 
     @app.post("/api/instances/{index}/stop")
     async def stop_instance(index: int):
+        # Stop all scripts running on this instance first
+        for script in registry.scripts:
+            running = registry.get_running(script.name, index)
+            if running:
+                registry.stop(script.name, index)
+                logger.info("Stopped script %s on instance %d (emulator stopping)", script.name, index)
         b = get_backend()
         success = b.stop(index)
         return {"success": success, "message": f"Instance {index} stop requested"}
