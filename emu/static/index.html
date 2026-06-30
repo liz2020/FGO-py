@@ -373,7 +373,7 @@
                     <span class="progress-text">${prog.current}/${prog.total} ${prog.detail || ''}</span>
                 </div>`;
             } else if (prog && prog.status !== 'idle') {
-                progressHtml = `<div class="progress-text" style="font-size:0.8rem;color:var(--text-dim);margin-bottom:4px;">${prog.detail || prog.status}</div>`;
+                progressHtml = `<div style="font-size:0.8rem;color:var(--text-dim);margin-bottom:4px;">${prog.detail || prog.status}</div>`;
             }
             scriptBtns += progressHtml;
             scriptBtns += `<button class="btn-stop-inline" onclick="stopScript('${r.name}', ${inst.index})">⏹ Stop</button> `;
