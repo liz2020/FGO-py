@@ -1204,6 +1204,16 @@ function setupDragAndDrop() {
             container.classList.remove('gu-over');
         }
     });
+
+    // Prevent page scroll on mobile while dragging
+    _drake.on('drag', function() {
+        document.body.style.overflow = 'hidden';
+        document.body.style.touchAction = 'none';
+    });
+    _drake.on('dragend', function() {
+        document.body.style.overflow = '';
+        document.body.style.touchAction = '';
+    });
 }
 
 async function submitReorder(ids) {
