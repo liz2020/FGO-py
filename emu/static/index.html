@@ -332,7 +332,7 @@
 
         // Stop button on meta line (only when running)
         const stopBtn = isRunning
-            ? `<button class="btn-stop-inline" onclick="action(${inst.index}, 'stop')" title="Stop emulator">⏹ Stop</button> · `
+            ? `<button class="btn-stop-inline" onclick="action(${inst.index}, 'stop')" title="Stop emulator">Stop</button> · `
             : '';
 
         // Preview area — always shown; dimmed placeholder when offline
@@ -385,7 +385,7 @@
             } else if (prog && prog.status !== 'idle') {
                 progressHtml = `<div style="font-size:0.8rem;color:var(--text-dim);margin-bottom:8px;padding:0 16px;">${prog.detail || prog.status}</div>`;
             }
-            scriptBtns += `<button class="btn-stop-inline" onclick="stopScript('${r.name}', ${inst.index})">⏹ Stop</button> `;
+            scriptBtns += `<button class="btn-stop-inline" onclick="stopScript('${r.name}', ${inst.index})">Stop</button> `;
             scriptBtns += `<button class="btn btn-script" onclick="openScriptUI('${r.name}', ${inst.index})">→ ${r.display_name}</button>`;
         }
         for (const s of available) {
