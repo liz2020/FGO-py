@@ -363,28 +363,28 @@
         );
 
         let scriptBtns = '';
+        let progressHtml = '';
         for (const r of running) {
             const prog = progressMap[`${r.name}:${inst.index}`];
-            let progressHtml = '';
             if (prog && prog.total > 0) {
                 const pct = Math.round((prog.current / prog.total) * 100);
-                progressHtml = `<div class="progress-bar-wrap">
+                progressHtml = `<div class="progress-bar-wrap" style="margin:0 16px 8px;">
                     <div class="progress-bar" style="width:${pct}%"></div>
                     <span class="progress-text">${prog.current}/${prog.total} ${prog.detail || ''}</span>
                 </div>`;
             } else if (prog && prog.status !== 'idle') {
-                progressHtml = `<div style="font-size:0.8rem;color:var(--text-dim);margin-bottom:4px;">${prog.detail || prog.status}</div>`;
+                progressHtml = `<div style="font-size:0.8rem;color:var(--text-dim);margin-bottom:8px;padding:0 16px;">${prog.detail || prog.status}</div>`;
             }
-            scriptBtns += progressHtml;
             scriptBtns += `<button class="btn-stop-inline" onclick="stopScript('${r.name}', ${inst.index})">⏹ Stop</button> `;
             scriptBtns += `<button class="btn btn-script" onclick="openScriptUI('${r.name}', ${inst.index})">→ ${r.display_name}</button>`;
         }
         for (const s of available) {
             scriptBtns += `<button class="btn btn-app" onclick="startScript('${s.name}', ${inst.index})">▶ ${s.display_name}</button>`;
         }
-        if (scriptBtns) {
+        if (scriptBtns || progressHtml) {
             scriptsHtml = `<div class="scripts-section">
                 <div class="section-label">Automation</div>
+                ${progressHtml}
                 <div class="btn-row">${scriptBtns}</div>
             </div>`;
         }
