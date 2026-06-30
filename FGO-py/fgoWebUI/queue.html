@@ -758,7 +758,7 @@ function renderLoopItem(task, idx) {
     }).join('');
     return `<li class="queue-item" data-id="${task.id}" data-idx="${idx}">
         <div class="item-header">
-            <span class="info">🔁 Loop</span>
+            <span class="info">Loop</span>
             <button class="remove-btn" onclick="removeFromQueue('${task.id}')">✕</button>
             <span class="loop-controls${dimmed}">
                 <button onclick="adjustLoop('${task.id}', -1)" ${infinite || remaining <= 1 ? 'disabled' : ''}>−</button>
@@ -812,7 +812,7 @@ function describeTask(task) {
         const infinite = task.params.infinite;
         const rem = task.params.remaining || 0;
         const label = infinite ? '∞' : `×${rem}`;
-        return `🔁 Loop ${label} (${n} tasks)`;
+        return `Loop ${label} (${n} tasks)`;
     }
     return task.type;
 }
