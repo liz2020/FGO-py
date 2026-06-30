@@ -158,13 +158,13 @@
         .btn-launch { background: var(--success); color: #1a1a2e; }
         .btn-stop { background: var(--primary); color: white; }
         .btn-stop-inline {
-            background: none;
-            border: none;
+            background: rgba(233, 69, 96, 0.15);
+            border: 1px solid rgba(233, 69, 96, 0.4);
             color: var(--primary);
-            font-size: 1.1rem;
+            font-size: 0.75rem;
             cursor: pointer;
-            padding: 2px 6px;
-            opacity: 0.8;
+            padding: 2px 10px;
+            border-radius: 4px;
             vertical-align: middle;
         }
         .btn-stop-inline:active { opacity: 0.5; }
@@ -320,7 +320,7 @@
         const isRunning = inst.status === 'running';
         const statusClass = inst.status === 'running' ? 'running' :
                            inst.status === 'launching' ? 'launching' : 'stopped';
-        const statusIcon = isRunning ? '🟢' : '⚫';
+        const statusIcon = '';
 
         let buttons = '';
         if (!isRunning) {
@@ -329,9 +329,9 @@
             </div>`;
         }
 
-        // Stop button inline after name (only when running)
+        // Stop button on meta line (only when running)
         const stopBtn = isRunning
-            ? `<button class="btn-stop-inline" onclick="event.stopPropagation(); action(${inst.index}, 'stop')" title="Stop">⏹</button>`
+            ? ` · <button class="btn-stop-inline" onclick="action(${inst.index}, 'stop')" title="Stop emulator">⏹ Stop</button>`
             : '';
 
         let preview = '';
@@ -386,10 +386,10 @@
 
         return `<div class="instance-card" id="card-${inst.index}">
             <div class="card-header">
-                <h2>${statusIcon} ${inst.name} ${stopBtn}</h2>
+                <h2>${inst.name}</h2>
                 <span class="card-status ${statusClass}">${inst.status}</span>
             </div>
-            <div class="card-meta">Index ${inst.index} · ${inst.adb_serial}</div>
+            <div class="card-meta">Index ${inst.index} · ${inst.adb_serial}${stopBtn}</div>
             ${preview}
             ${buttons}
             ${scriptsHtml}

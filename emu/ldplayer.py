@@ -76,15 +76,20 @@ class LDConsole:
         result = subprocess.run(
             cmd,
             capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
             timeout=timeout,
             creationflags=subprocess.CREATE_NO_WINDOW if hasattr(subprocess, "CREATE_NO_WINDOW") else 0,
         )
+        # ldconsole on Chinese Windows outputs GBK; fall back to utf-8 then latin-1
+        stdout_bytes = result.stdout
         if result.returncode != 0:
-            logger.warning("ldconsole %s failed (rc=%d): %s", args[0], result.returncode, result.stderr.strip())
-        return result.stdout
+            stderr_text = result.stderr.decode("utf-8", errors="replace").strip()
+            logger.warning("ldconsole %s failed (rc=%d): %s", args[0], result.returncode, stderr_text)
+        for enc in ("utf-8", "gbk", "latin-1"):
+            try:
+                return stdout_bytes.decode(enc)
+            except (UnicodeDecodeError, LookupError):
+                continue
+        return stdout_bytes.decode("utf-8", errors="replace")
 
     def list_instances(self) -> list[dict]:
         """Parse `ldconsole list2` output into instance dicts.
