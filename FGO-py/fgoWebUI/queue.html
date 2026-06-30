@@ -728,9 +728,8 @@ function renderPending() {
         const expanded = expandedIds.has(task.id);
         return `<li class="queue-item" data-id="${task.id}" data-idx="${idx}">
             <div class="item-header">
-                <button class="remove-btn" onclick="removeFromQueue('${task.id}')">🗑</button>
                 <span class="info">${desc}</span>
-                <span class="status-badge pending">Pending</span>
+                <button class="remove-btn" onclick="removeFromQueue('${task.id}')">🗑</button>
                 <button class="expand-btn${expanded ? ' expanded' : ''}" onclick="toggleExpand(this, '${task.id}')">${expanded ? '▾ Details' : '▸ Details'}</button>
             </div>
             <div class="item-details${expanded ? ' show' : ''}">${details}</div>
@@ -750,8 +749,8 @@ function renderLoopItem(task, idx) {
         const childExpanded = expandedIds.has(c.id);
         return `<div class="loop-child-item queue-item" data-id="${c.id}" data-child-id="${c.id}">
             <div class="item-header">
-                <button class="remove-btn" onclick="removeChildFromLoop('${task.id}', '${c.id}')" style="font-size:0.8rem;padding:2px 4px;">✕</button>
                 <span class="info">• ${childDesc}</span>
+                <button class="remove-btn" onclick="removeChildFromLoop('${task.id}', '${c.id}')" style="font-size:0.8rem;padding:2px 4px;">✕</button>
                 <button class="expand-btn${childExpanded ? ' expanded' : ''}" onclick="toggleExpand(this, '${c.id}')">${childExpanded ? '▾ Details' : '▸ Details'}</button>
             </div>
             <div class="item-details${childExpanded ? ' show' : ''}">${childDetails}</div>
@@ -759,8 +758,8 @@ function renderLoopItem(task, idx) {
     }).join('');
     return `<li class="queue-item" data-id="${task.id}" data-idx="${idx}">
         <div class="item-header">
-            <button class="remove-btn" onclick="removeFromQueue('${task.id}')">🗑</button>
             <span class="info">🔁 Loop</span>
+            <button class="remove-btn" onclick="removeFromQueue('${task.id}')">🗑</button>
             <span class="loop-controls${dimmed}">
                 <button onclick="adjustLoop('${task.id}', -1)" ${infinite || remaining <= 1 ? 'disabled' : ''}>−</button>
                 <span class="loop-count">${remaining}</span>
