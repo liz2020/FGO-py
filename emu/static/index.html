@@ -444,6 +444,15 @@
         ws.onmessage = (event) => {
             const msg = JSON.parse(event.data);
             if (msg.type === 'instance_status') {
+                // Auto-toggle live streaming based on emulator state
+                if (msg.status === 'stopped' && streaming[msg.index]) {
+                    // Unsubscribe — emulator is offline, no point streaming
+                    streaming[msg.index] = false;
+                    ws.send(JSON.stringify({ action: 'unsubscribe_screenshot', index: msg.index }));
+                } else if (msg.status === 'running' && !streaming[msg.index]) {
+                    // Auto-subscribe — emulator just came online
+                    autoSubscribe(msg.index);
+                }
                 loadInstances();  // Refresh on status change
             } else if (msg.type === 'screenshot') {
                 const img = document.getElementById(`preview-${msg.index}`);
