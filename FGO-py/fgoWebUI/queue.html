@@ -729,7 +729,7 @@ function renderPending() {
         return `<li class="queue-item" data-id="${task.id}" data-idx="${idx}">
             <div class="item-header">
                 <span class="info">${desc}</span>
-                <button class="remove-btn" onclick="removeFromQueue('${task.id}')">🗑</button>
+                <button class="remove-btn" onclick="removeFromQueue('${task.id}')">✕</button>
                 <button class="expand-btn${expanded ? ' expanded' : ''}" onclick="toggleExpand(this, '${task.id}')">${expanded ? '▾ Details' : '▸ Details'}</button>
             </div>
             <div class="item-details${expanded ? ' show' : ''}">${details}</div>
@@ -759,7 +759,7 @@ function renderLoopItem(task, idx) {
     return `<li class="queue-item" data-id="${task.id}" data-idx="${idx}">
         <div class="item-header">
             <span class="info">🔁 Loop</span>
-            <button class="remove-btn" onclick="removeFromQueue('${task.id}')">🗑</button>
+            <button class="remove-btn" onclick="removeFromQueue('${task.id}')">✕</button>
             <span class="loop-controls${dimmed}">
                 <button onclick="adjustLoop('${task.id}', -1)" ${infinite || remaining <= 1 ? 'disabled' : ''}>−</button>
                 <span class="loop-count">${remaining}</span>
