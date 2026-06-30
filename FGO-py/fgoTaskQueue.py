@@ -273,9 +273,9 @@ class TaskWorker(threading.Thread):
                     )
                     _report_progress(0, total, "running", quest_name)
                     op()
+                    _report_progress(total, total, "done", "Complete")
                 finally:
                     fgoKernel.Turn.normalAttackOnly = False
-                    _report_progress(total, total, "done", "Complete")
                 return {"battle_count": getattr(op, 'battleCount', 0)}
             case "battle":
                 logger.info("Starting battle")
