@@ -231,6 +231,7 @@ class TaskWorker(threading.Thread):
                 task.status = "cancelled"
                 task.result = {"error": str(e)}
                 task.finished_at = time.time()
+                _report_progress(0, 0, "cancelled", "Cancelled")
                 logger.info(f"Task {task.id} cancelled: {e}")
             except Exception as e:
                 # Error — stays in active slot
@@ -272,6 +273,7 @@ class TaskWorker(threading.Thread):
                 return {"battle_count": getattr(op, 'battleCount', 0)}
             case "battle":
                 logger.info("Starting battle")
+                _report_progress(0, 0, "running", "Battle in progress")
                 fgoKernel.Battle()()
                 return {}
             case "wait":

@@ -208,7 +208,7 @@
             position: relative;
             overflow: hidden;
             margin-bottom: 8px;
-            width: 100%;
+            box-sizing: border-box;
         }
         .progress-bar {
             background: var(--success);
@@ -366,9 +366,11 @@
         let progressHtml = '';
         for (const r of running) {
             const prog = progressMap[`${r.name}:${inst.index}`];
-            if (prog && prog.total > 0) {
+            if (prog && prog.status === 'cancelled') {
+                progressHtml = `<div style="font-size:0.8rem;color:#e74c3c;margin-bottom:8px;padding:0 16px;">Cancelled</div>`;
+            } else if (prog && prog.total > 0) {
                 const pct = Math.round((prog.current / prog.total) * 100);
-                progressHtml = `<div class="progress-bar-wrap" style="margin:0 16px 8px;">
+                progressHtml = `<div class="progress-bar-wrap" style="margin:0 16px 8px;width:auto;">
                     <div class="progress-bar" style="width:${pct}%"></div>
                     <span class="progress-text">${prog.current}/${prog.total} ${prog.detail || ''}</span>
                 </div>`;
