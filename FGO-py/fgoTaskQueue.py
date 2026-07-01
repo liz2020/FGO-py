@@ -383,6 +383,11 @@ class TaskWorker(threading.Thread):
                 return {"waited_minutes": minutes}
             case "stop_emulator":
                 logger.info("Stopping emulator")
+                status = self._get_instance_status()
+                if status == "stopped":
+                    raise RuntimeError(
+                        f"Emulator instance {_instance_index} is already stopped."
+                    )
                 _report_progress(0, 0, "running", "Stopping emulator")
                 self._call_emu_manager("stop")
                 # Reset device to disconnected state (stale handles would crash)
@@ -390,6 +395,14 @@ class TaskWorker(threading.Thread):
                 return {"stopped": True}
             case "start_emulator":
                 logger.info("Starting emulator")
+                # Fail fast if the emulator is already running — otherwise
+                # `_wait_and_reconnect` would hang re-probing an already-live device.
+                status = self._get_instance_status()
+                if status == "running":
+                    raise RuntimeError(
+                        f"Emulator instance {_instance_index} is already running; "
+                        "stop it first or remove this task."
+                    )
                 _report_progress(0, 0, "running", "Starting emulator")
                 self._call_emu_manager("launch")
                 # Wait for emulator to be ready, then reconnect device
@@ -403,6 +416,22 @@ class TaskWorker(threading.Thread):
                 m = fgoKernel.Main(appleTotal=1, appleKind=kind_index)
                 m.eatApple()
                 return {"apple_kind": apple_kind}
+            case "launch_game":
+                timeout_s = int(task.params.get("timeout_s", 120))
+                logger.info(f"Launching game (timeout={timeout_s}s)")
+                _state_detail = {
+                    "launching": "Launching FGO...",
+                    "cadpa": "On splash screen",
+                    "notice": "Dismissing notice",
+                    "waiting": "Waiting for login",
+                    "main": "On main menu",
+                }
+                def _on_state(state: str):
+                    _report_progress(0, 0, "running", _state_detail.get(state, state))
+                _report_progress(0, 0, "running", _state_detail["launching"])
+                fgoKernel.launchGame(timeout_s=timeout_s, on_progress=_on_state)
+                _report_progress(1, 1, "done", "On main menu")
+                return {"reached_main": True}
             case _:
                 raise ValueError(f"Unknown task type: {task.type}")
 
@@ -420,6 +449,23 @@ class TaskWorker(threading.Thread):
             urllib.request.urlopen(req, timeout=30)
         except Exception as e:
             raise RuntimeError(f"Failed to {action} emulator: {e}")
+
+    def _get_instance_status(self) -> str:
+        """Query emu manager for the current instance status. Returns
+        'running', 'stopped', 'launching', or 'unknown' on error."""
+        if not _emu_manager_url:
+            return "unknown"
+        try:
+            req = urllib.request.Request(
+                f"{_emu_manager_url}/api/instances/{_instance_index}",
+                method="GET",
+            )
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+                return data.get("status", "unknown")
+        except Exception as e:
+            logger.warning("Failed to query instance status: %s", e)
+            return "unknown"
 
     def _wait_for_device(self, timeout: int = 120):
         """Wait until the device becomes available after emulator start."""

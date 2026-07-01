@@ -490,12 +490,17 @@
                 <option value="wait">Wait</option>
                 <option value="stop_emulator">Stop Emulator</option>
                 <option value="start_emulator">Start Emulator</option>
+                <option value="launch_game">Launch Game</option>
                 <option value="loop">Loop (Repeat Group)</option>
             </select>
         </div>
         <div class="form-row" id="taskParamWait">
             <label>Minutes</label>
             <input type="number" id="inputWaitMinutes" value="30" min="1" max="9999">
+        </div>
+        <div class="form-row" id="taskParamLaunchGame" style="display:none">
+            <label>Timeout (s)</label>
+            <input type="number" id="inputLaunchGameTimeout" value="120" min="30" max="1800">
         </div>
         <div id="taskParamLoop" style="display:none">
             <div class="form-row">
@@ -806,6 +811,7 @@ function describeTask(task) {
     if (task.type === 'wait') return `Wait ${task.params.minutes || '?'} min`;
     if (task.type === 'stop_emulator') return 'Stop Emulator';
     if (task.type === 'start_emulator') return 'Start Emulator';
+    if (task.type === 'launch_game') return 'Launch Game';
     if (task.type === 'loop') {
         const n = task.children ? task.children.length : 0;
         const infinite = task.params.infinite;
@@ -885,6 +891,7 @@ function onTaskTypeChange() {
     const type = document.getElementById('selTaskType').value;
     document.getElementById('taskParamWait').style.display = type === 'wait' ? '' : 'none';
     document.getElementById('taskParamLoop').style.display = type === 'loop' ? '' : 'none';
+    document.getElementById('taskParamLaunchGame').style.display = type === 'launch_game' ? '' : 'none';
 }
 
 async function addTaskToQueue() {
@@ -893,6 +900,8 @@ async function addTaskToQueue() {
     let children = [];
     if (type === 'wait') {
         params.minutes = parseInt(document.getElementById('inputWaitMinutes').value) || 1;
+    } else if (type === 'launch_game') {
+        params.timeout_s = parseInt(document.getElementById('inputLaunchGameTimeout').value) || 120;
     } else if (type === 'loop') {
         const infinite = document.getElementById('chkLoopInfinite').checked;
         const remaining = parseInt(document.getElementById('inputLoopCount').value) || 3;
@@ -1131,6 +1140,7 @@ function describeTaskDetails(task) {
     if (task.type === 'wait') return `Wait for ${task.params.minutes || '?'} minutes`;
     if (task.type === 'stop_emulator') return 'Stop the emulator instance';
     if (task.type === 'start_emulator') return 'Start the emulator instance';
+    if (task.type === 'launch_game') return `Launch FGO and drive it to the main menu (timeout ${task.params.timeout_s || 120}s)`;
     return task.type;
 }
 

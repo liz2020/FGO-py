@@ -117,8 +117,8 @@ async def get_queue():
     return task_queue.get_state()
 
 
-VALID_TASK_TYPES = ("operation", "battle", "wait", "stop_emulator", "start_emulator", "loop")
-VALID_CHILD_TYPES = ("operation", "battle", "wait", "stop_emulator", "start_emulator")
+VALID_TASK_TYPES = ("operation", "battle", "wait", "stop_emulator", "start_emulator", "launch_game", "loop")
+VALID_CHILD_TYPES = ("operation", "battle", "wait", "stop_emulator", "start_emulator", "launch_game")
 
 
 @app.post("/api/queue")
