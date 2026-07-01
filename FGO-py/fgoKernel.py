@@ -80,6 +80,67 @@ def setup():
         while not Detect(1).isGameAnnounce():fgoDevice.device.press('\xBB')
         fgoDevice.device.press('\x08')
     elif False:...
+
+def launchGame(timeout_s=120,on_progress=None):
+    """Launch FGO via ldconsole and drive it from any pre-login screen to the main interface.
+
+    Handled states:
+      - Emulator home screen / other app: launched via `ldconsole runapp`.
+      - CADPA license splash: tap safe center to advance.
+      - Login "点击屏幕" screen: tap safe center to advance.
+      - Post-login announcement popups: tap the top-right X.
+      - Main interface (MENU icon): DONE.
+
+    Not handled (see design log 010):
+      - 资料更新 (resource-update) dialog. When present, this function will
+        time out; the user must tap "开始更新资料" manually and re-run the task.
+
+    Args:
+        timeout_s: max wall-clock seconds to wait for the main interface.
+        on_progress: optional callable(state:str) invoked at each state change,
+            with values like "launching", "cadpa", "notice", "main", "waiting".
+
+    Raises:
+        TimeoutError: if the main interface is not reached within timeout_s.
+    """
+    _notify=on_progress if callable(on_progress)else lambda _:None
+    # Kick off the app via ldconsole. When the device is an LDPlayerDevice it exposes
+    # ._console (LDConsole wrapper) and ._index + .package; use them directly.
+    dev=getattr(fgoDevice.device,'I',None)
+    if dev is not None and hasattr(dev,'_console')and hasattr(dev,'_index'):
+        package=getattr(dev,'package','com.bilibili.fatego')
+        logger.info(f'Launching FGO app {package} on ldplayer:{dev._index}')
+        try:dev._console.launch_app(dev._index,package)
+        except Exception as e:logger.warning(f'ldconsole launch_app failed: {e}')
+    else:
+        logger.warning('launchGame: no LDPlayer device wired up; relying on FGO being already open')
+    _notify('launching')
+    deadline=time.time()+timeout_s
+    last_state=None
+    while time.time()<deadline:
+        schedule.checkStop()
+        d=Detect()
+        if d.isMainInterface():
+            _notify('main')
+            logger.info('launchGame: reached main interface')
+            return
+        if d.isCloseNotice():
+            pos=d.locateCloseNotice()
+            if pos:
+                logger.info(f'launchGame: dismissing notice at {pos}')
+                fgoDevice.device.touch(pos)
+            if last_state!='notice':_notify('notice');last_state='notice'
+        elif d.isCadpaLogo():
+            logger.debug('launchGame: CADPA splash, tapping safe left-middle')
+            fgoDevice.device.touch((20,360))
+            if last_state!='cadpa':_notify('cadpa');last_state='cadpa'
+        else:
+            logger.debug('launchGame: unknown screen, tapping safe left-middle')
+            fgoDevice.device.touch((20,360))
+            if last_state!='waiting':_notify('waiting');last_state='waiting'
+        schedule.sleep(2.0)
+    raise TimeoutError(f'launchGame: did not reach main interface within {timeout_s}s')
+
 @serialize(mutex)
 def fpSummon():
     while fuse.value<30:
