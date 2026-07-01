@@ -167,6 +167,58 @@ class TaskQueue:
             self._tasks = deque(index[i] for i in ids)
             return True
 
+    def set_order(self, items: list[dict]) -> bool:
+        """Rebuild the pending queue from a hierarchical order.
+
+        `items` is a list like `[{"id": str, "children": [ids] | None}, ...]`.
+        Every currently pending id (top-level *and* nested loop children) must
+        appear exactly once. Children may only be nested under a loop task,
+        and loops cannot be nested inside other loops.
+
+        This is the single source of truth for drag-and-drop operations that
+        may simultaneously reorder, move items in/out of loops, or reorder
+        loop children — it replaces piecemeal calls that used to always
+        append and lose the user's chosen position.
+        """
+        with self._lock:
+            # Snapshot every existing task (top-level + loop children) by id.
+            by_id: dict[str, Task] = {}
+            for t in self._tasks:
+                by_id[t.id] = t
+                if t.type == "loop":
+                    for c in t.children:
+                        by_id[c.id] = c
+
+            seen: set[str] = set()
+            for item in items:
+                tid = item.get("id")
+                if tid not in by_id or tid in seen:
+                    return False
+                seen.add(tid)
+                task = by_id[tid]
+                children = item.get("children") or []
+                if children and task.type != "loop":
+                    return False
+                for cid in children:
+                    if cid not in by_id or cid in seen:
+                        return False
+                    child = by_id[cid]
+                    if child.type == "loop":
+                        return False
+                    seen.add(cid)
+
+            if seen != set(by_id.keys()):
+                return False
+
+            new_tasks: deque[Task] = deque()
+            for item in items:
+                task = by_id[item["id"]]
+                if task.type == "loop":
+                    task.children = [by_id[cid] for cid in (item.get("children") or [])]
+                new_tasks.append(task)
+            self._tasks = new_tasks
+            return True
+
     def is_busy(self) -> bool:
         """True if there is an actively running task."""
         return self._current is not None and self._current.status == "active"

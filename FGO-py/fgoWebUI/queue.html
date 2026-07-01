@@ -1183,23 +1183,11 @@ function setupDragAndDrop() {
         const taskId = el.dataset.id;
         if (!taskId) return;
 
-        if (target.classList.contains('loop-drop-zone')) {
-            // Dropped into a loop
-            const loopId = target.dataset.loopId;
-            if (source === list) {
-                // Moving from main queue into loop
-                addChildToLoop(loopId, taskId);
-            }
-        } else if (target === list && source.classList.contains('loop-drop-zone')) {
-            // Dragged OUT of a loop back to main queue
-            const loopId = source.dataset.loopId;
-            removeChildFromLoop(loopId, el.dataset.childId || taskId);
-        } else if (target === list && source === list) {
-            // Reorder within main queue
-            const items = list.querySelectorAll(':scope > .queue-item');
-            const ids = Array.from(items).map(item => item.dataset.id);
-            submitReorder(ids);
-        }
+        // Any drag between the main list and a loop zone (or reorder within
+        // either) is submitted as a single hierarchical order so the exact
+        // drop position is preserved. Piecemeal "add child / reorder" calls
+        // used to always append, which looked like a reorder to the user.
+        submitFullOrder();
     });
 
     // Visual feedback when hovering over a loop zone
@@ -1236,6 +1224,43 @@ async function submitReorder(ids) {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ ids })
         });
+        await fetchState();
+    } catch (e) {
+        console.error('Reorder error:', e);
+        await fetchState();  // Reset DOM to server state
+    }
+}
+
+// Build a hierarchical order snapshot from the current DOM and send it as a
+// single reorder request. Used after every drag-and-drop so the backend
+// mirrors exactly what the user sees, including position inside a loop.
+async function submitFullOrder() {
+    const list = document.getElementById('queueList');
+    const items = [];
+    list.querySelectorAll(':scope > .queue-item').forEach(li => {
+        const id = li.dataset.id;
+        if (!id) return;
+        const zone = li.querySelector(':scope > .loop-children.loop-drop-zone');
+        if (zone) {
+            // Match both `.loop-child-item` (already-rendered children) and
+            // `.queue-item` (a top-level item that dragula just moved in and
+            // hasn't been re-rendered yet). `.loop-child-item` also carries
+            // `.queue-item`, so this selector covers both.
+            const children = Array.from(zone.querySelectorAll(':scope > .queue-item'))
+                .map(c => c.dataset.id)
+                .filter(Boolean);
+            items.push({ id, children });
+        } else {
+            items.push({ id });
+        }
+    });
+    try {
+        const res = await fetch(`${API}/api/queue/reorder`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ items })
+        });
+        if (!res.ok) throw new Error('reorder failed');
         await fetchState();
     } catch (e) {
         console.error('Reorder error:', e);
