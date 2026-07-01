@@ -59,3 +59,18 @@
 **Fix:** Walk up the DOM tree from `handle` to check if any ancestor (up to `el`) has the `.drag-handle` class. Later simplified to: allow drag from anywhere except buttons/inputs (walk up checking for BUTTON/INPUT/LABEL tags).
 
 **Takeaway:** Dragula's `handle` parameter is the event target, not a pre-filtered handle element. Always walk up the DOM tree or use tag-based exclusions.
+
+## 7. Piecemeal loop-child APIs lose drop position
+
+**Assumption:** Backing drag-and-drop on loops with three small endpoints — `add_child_to_loop`, `remove_child_from_loop`, and the flat `reorder(ids)` for the main queue — was enough, because dragula moves the DOM to the exact drop position and the WebSocket re-render would reflect it.
+
+**Reality:** Every one of those endpoints threw the position away:
+- `add_child_to_loop` always **appended** to `loop.children`, so dropping a task between two loop children put it at the end.
+- `remove_child_from_loop` on a "drag out of loop" **deleted** the task instead of moving it back to the pending queue at the drop position.
+- There was no endpoint at all for reordering *within* a loop's children, so intra-loop drags visually snapped back on the next re-render.
+
+From the user's POV: adding, removing, or reordering anything near a loop looked like the whole loop got "reshuffled" — because the backend order didn't match what dragula had just rendered.
+
+**Fix:** Replaced the three endpoints (for drag paths) with a single hierarchical reorder. Added `TaskQueue.set_order(items)` where `items = [{"id": str, "children": [ids]?}, ...]`. It validates (every current id present exactly once, `children` only under loops, no nested loops) and atomically rebuilds the deque and each loop's `children` list. `POST /api/queue/reorder` now accepts either `ids` (legacy flat) or `items` (hierarchical). On every dragula `drop`, the client snapshots the entire DOM hierarchy (top-level items + each `.loop-drop-zone`'s current children, matching both `.loop-child-item` and the just-moved `.queue-item` that hasn't been re-rendered yet) and submits it in one call.
+
+**Takeaway:** For hierarchical drag-and-drop, don't split "move within", "move in", and "move out" into separate operations that each `append`/`delete`. Model the drop result as a single "here's the new tree, apply it atomically" request and rebuild from the DOM. It's simpler, race-free, and preserves the exact position the user chose. As a bonus, drag-out-of-loop stopped deleting tasks.

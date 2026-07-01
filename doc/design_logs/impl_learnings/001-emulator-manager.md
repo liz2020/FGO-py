@@ -144,3 +144,23 @@ Removing the PySide6 GUI (6 files) and switching the default entry point from `g
 **Why not WebSocket?** Flask doesn't natively support WebSocket. Adding flask-socketio or switching to async would be over-engineering for a simple progress counter. HTTP POST is fire-and-forget, works with `urllib.request` (no deps), and the emu manager just stores the latest value in memory.
 
 **Takeaway:** Don't reach for WebSocket when a simple POST-to-poll pattern suffices. The dashboard polls progress on its own refresh cycle anyway.
+
+---
+
+## 13. Uvicorn's `websockets` legacy protocol is not safe for concurrent writes
+
+**Assumption:** Multiple background coroutines could all `await websocket.send_text(...)` on the same connection concurrently — the transport would serialize them.
+
+**Reality:** Every `/ws/status` connection had four independent producers writing to the same socket: `_poll_status` (broadcasts `instance_status` on state change), `_stream_screenshots` (JPEG frames at 10 fps), the receive-loop that acks `subscribed`/`unsubscribed`, and HTTP handlers calling `manager.broadcast(...)`. When two of them landed in the underlying `websockets.legacy.protocol.drain_helper` at the same time, they collided on the drain waiter and blew up:
+
+```
+File "...websockets/legacy/protocol.py", line 308, in _drain_helper
+    assert waiter is None or waiter.cancelled()
+AssertionError
+```
+
+The traceback surfaced through `keepalive_ping` because that's the coroutine that happened to lose the race — but the actual second writer was always one of the app-level producers. The connection was then dropped and the client had to reconnect.
+
+**Fix:** Serialize sends per connection with an `asyncio.Lock`. `ConnectionManager` now keeps a `dict[id(websocket), asyncio.Lock]`, populated on `connect` and cleared on `disconnect`, and exposes an `async def send_text(ws, data)` that acquires the lock around the actual `ws.send_text(...)`. Every producer (`broadcast`, receive-loop acks, screenshot stream) goes through it. The lock is per-connection so different clients don't block each other, and the screenshot fan-out still runs concurrently across sockets.
+
+**Takeaway:** Under uvicorn's default `ws=websockets` (legacy protocol), treat a `WebSocket` as a **single-writer resource** and gate every send through a per-connection lock as soon as you have more than one coroutine that might send. Alternatives — switching uvicorn to `ws=wsproto`, or funneling all sends through a per-connection `asyncio.Queue` with one dedicated sender task — work too, but a lock is the smallest change.

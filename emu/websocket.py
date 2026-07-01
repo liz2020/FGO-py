@@ -23,17 +23,40 @@ class ConnectionManager:
     def __init__(self):
         self.active_connections: list[WebSocket] = []
         self._screenshot_subscribers: dict[int, list[WebSocket]] = {}
+        # Per-connection send lock. Uvicorn's `websockets` legacy protocol is
+        # NOT safe for concurrent writes on the same connection — the poll,
+        # screenshot stream, receive-loop acks, and broadcast can all fire
+        # at once, and two coroutines colliding inside `_drain_helper`
+        # trip `assert waiter is None or waiter.cancelled()` (which surfaces
+        # most visibly as "keepalive ping failed"). Serialize every send
+        # through this per-connection lock.
+        self._send_locks: dict[int, asyncio.Lock] = {}
 
     async def connect(self, websocket: WebSocket):
         await websocket.accept()
         self.active_connections.append(websocket)
+        self._send_locks[id(websocket)] = asyncio.Lock()
 
     def disconnect(self, websocket: WebSocket):
-        self.active_connections.remove(websocket)
+        if websocket in self.active_connections:
+            self.active_connections.remove(websocket)
+        self._send_locks.pop(id(websocket), None)
         # Remove from screenshot subscriptions
         for subs in self._screenshot_subscribers.values():
             if websocket in subs:
                 subs.remove(websocket)
+
+    async def send_text(self, websocket: WebSocket, data: str) -> None:
+        """Send text through the per-connection lock so concurrent producers
+        (poll / screenshot / receive-loop ack / broadcast) can't collide
+        inside the underlying `websockets` drain path."""
+        lock = self._send_locks.get(id(websocket))
+        if lock is None:
+            # Not tracked (e.g. mid-disconnect); fall back to a direct send.
+            await websocket.send_text(data)
+            return
+        async with lock:
+            await websocket.send_text(data)
 
     def subscribe_screenshot(self, websocket: WebSocket, index: int):
         if index not in self._screenshot_subscribers:
@@ -54,9 +77,9 @@ class ConnectionManager:
         """Send message to all connected clients."""
         data = json.dumps(message)
         disconnected = []
-        for connection in self.active_connections:
+        for connection in list(self.active_connections):
             try:
-                await connection.send_text(data)
+                await self.send_text(connection, data)
             except Exception:
                 disconnected.append(connection)
         for conn in disconnected:
@@ -97,13 +120,13 @@ def setup_websocket_routes(
 
                     if action == "subscribe_screenshot" and index is not None:
                         manager.subscribe_screenshot(websocket, index)
-                        await websocket.send_text(json.dumps({
+                        await manager.send_text(websocket, json.dumps({
                             "type": "subscribed",
                             "index": index,
                         }))
                     elif action == "unsubscribe_screenshot" and index is not None:
                         manager.unsubscribe_screenshot(websocket, index)
-                        await websocket.send_text(json.dumps({
+                        await manager.send_text(websocket, json.dumps({
                             "type": "unsubscribed",
                             "index": index,
                         }))
@@ -185,7 +208,7 @@ async def _stream_screenshots(
                 disconnected = []
                 for ws in subscribers:
                     try:
-                        await ws.send_text(message)
+                        await manager.send_text(ws, message)
                     except Exception:
                         disconnected.append(ws)
                 for ws in disconnected:

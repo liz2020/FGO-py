@@ -92,7 +92,11 @@ class MoveRequest(BaseModel):
 
 
 class ReorderRequest(BaseModel):
-    ids: list[str]
+    # Legacy flat reorder: pending top-level ids only.
+    ids: list[str] | None = None
+    # Hierarchical reorder used by drag-and-drop; preserves loop nesting +
+    # exact drop position. items: [{"id": str, "children": [ids]?}, ...]
+    items: list[dict] | None = None
 
 
 class LoopPatchRequest(BaseModel):
@@ -202,8 +206,14 @@ async def control_cancel():
 
 @app.post("/api/queue/reorder")
 async def reorder_queue(req: ReorderRequest):
-    if not task_queue.reorder(req.ids):
-        raise HTTPException(400, "IDs don't match pending tasks")
+    if req.items is not None:
+        ok = task_queue.set_order(req.items)
+    elif req.ids is not None:
+        ok = task_queue.reorder(req.ids)
+    else:
+        raise HTTPException(400, "Provide 'ids' or 'items'")
+    if not ok:
+        raise HTTPException(400, "Invalid order payload")
     state = task_queue.get_state()
     ws_manager.enqueue({"event": "state_updated", "state": state})
     return {"ok": True}

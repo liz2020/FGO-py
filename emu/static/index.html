@@ -242,6 +242,7 @@
     const API = '';
     let ws = null;
     let streaming = {};  // index -> boolean
+    let liveDisabled = {};  // index -> true when user explicitly turned live OFF; suppresses auto-subscribe
 
     // --- API helpers ---
     async function api(path, opts = {}) {
@@ -309,9 +310,10 @@
         }
         container.innerHTML = instances.map(inst => renderCard(inst, scripts, progressMap || {})).join('');
 
-        // Auto-subscribe live for running instances that aren't streaming yet
+        // Auto-subscribe live for running instances that aren't streaming yet,
+        // unless the user explicitly turned live off on this instance.
         for (const inst of instances) {
-            if (inst.status === 'running' && !streaming[inst.index]) {
+            if (inst.status === 'running' && !streaming[inst.index] && !liveDisabled[inst.index]) {
                 autoSubscribe(inst.index);
             }
         }
@@ -459,7 +461,12 @@
                     // Unsubscribe — emulator is offline, no point streaming
                     streaming[msg.index] = false;
                     ws.send(JSON.stringify({ action: 'unsubscribe_screenshot', index: msg.index }));
-                } else if (msg.status === 'running' && !streaming[msg.index]) {
+                }
+                if (msg.status === 'stopped') {
+                    // Reset the user's live-off preference so a fresh launch
+                    // defaults to live-on again.
+                    delete liveDisabled[msg.index];
+                } else if (msg.status === 'running' && !streaming[msg.index] && !liveDisabled[msg.index]) {
                     // Auto-subscribe — emulator just came online
                     autoSubscribe(msg.index);
                 }
@@ -482,6 +489,13 @@
     function toggleStream(index) {
         if (!ws || ws.readyState !== WebSocket.OPEN) return;
         streaming[index] = !streaming[index];
+        // Record the user's explicit intent so the periodic re-render
+        // (loadInstances every 10s + status events) won't undo it.
+        if (streaming[index]) {
+            delete liveDisabled[index];
+        } else {
+            liveDisabled[index] = true;
+        }
         const action = streaming[index] ? 'subscribe_screenshot' : 'unsubscribe_screenshot';
         ws.send(JSON.stringify({ action, index }));
 
