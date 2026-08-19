@@ -81,24 +81,22 @@ def setup():
         fgoDevice.device.press('\x08')
     elif False:...
 
-def launchGame(timeout_s=120,on_progress=None):
+def launchGame(timeout_s=200,on_progress=None):
     """Launch FGO via ldconsole and drive it from any pre-login screen to the main interface.
 
     Handled states:
       - Emulator home screen / other app: launched via `ldconsole runapp`.
       - CADPA license splash: tap safe center to advance.
       - Login "点击屏幕" screen: tap safe center to advance.
+      - CN resource-update dialog: tap "开始更新资料" and wait.
       - Post-login announcement popups: tap the top-right X.
+      - CN modal popups with bottom "关闭" or "取消" button: close and continue.
       - Main interface (MENU icon): DONE.
-
-    Not handled (see design log 010):
-      - 资料更新 (resource-update) dialog. When present, this function will
-        time out; the user must tap "开始更新资料" manually and re-run the task.
 
     Args:
         timeout_s: max wall-clock seconds to wait for the main interface.
         on_progress: optional callable(state:str) invoked at each state change,
-            with values like "launching", "cadpa", "notice", "main", "waiting".
+            with values like "launching", "cadpa", "update", "notice", "popup", "main", "waiting".
 
     Raises:
         TimeoutError: if the main interface is not reached within timeout_s.
@@ -120,16 +118,35 @@ def launchGame(timeout_s=120,on_progress=None):
     while time.time()<deadline:
         schedule.checkStop()
         d=Detect()
-        if d.isMainInterface():
-            _notify('main')
-            logger.info('launchGame: reached main interface')
-            return
         if d.isCloseNotice():
             pos=d.locateCloseNotice()
             if pos:
                 logger.info(f'launchGame: dismissing notice at {pos}')
                 fgoDevice.device.touch(pos)
             if last_state!='notice':_notify('notice');last_state='notice'
+        elif getattr(d,'isResourceUpdateDialog',lambda:False)():
+            pos=d.locateResourceUpdateBegin()
+            if pos:
+                logger.info(f'launchGame: starting resource update at {pos}')
+                fgoDevice.device.touch(pos)
+            deadline=max(deadline,time.time()+600)
+            if last_state!='update':_notify('update');last_state='update'
+        elif getattr(d,'isPopupCloseButton',lambda:False)():
+            pos=d.locatePopupCloseButton()
+            if pos:
+                logger.info(f'launchGame: closing popup at {pos}')
+                fgoDevice.device.touch(pos)
+            if last_state!='popup':_notify('popup');last_state='popup'
+        elif getattr(d,'isPopupCancelButton',lambda:False)():
+            pos=d.locatePopupCancelButton()
+            if pos:
+                logger.info(f'launchGame: cancelling popup at {pos}')
+                fgoDevice.device.touch(pos)
+            if last_state!='popup':_notify('popup');last_state='popup'
+        elif d.isMainInterface():
+            _notify('main')
+            logger.info('launchGame: reached main interface')
+            return
         elif d.isCadpaLogo():
             logger.debug('launchGame: CADPA splash, tapping safe left-middle')
             fgoDevice.device.touch((20,360))

@@ -59,7 +59,8 @@ async def lifespan(app: FastAPI):
 
     yield
 
-    # Cleanup: stop all script processes
+    # Cleanup: stop automation scripts only. Emulator instances are independent
+    # and must only be stopped by explicit user action through the stop endpoint.
     for proc in registry.all_processes():
         if proc.status == "running":
             registry.stop(proc.script_name, proc.instance_index)

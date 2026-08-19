@@ -105,7 +105,7 @@ deploy/              # Deployment scripts
 10. **LDOpenGL handles crash on emulator exit** — When the emulator stops, shared memory handles become invalid. Reset `fgoDevice.device = fgoDevice.Device()` (disconnected placeholder) *before* stopping the emulator, not after.
 11. **FGO-py web server must start without emulator** — `LDPlayerDevice.__init__` raises `RuntimeError` when emulator is offline. Wrap in try/catch and store `_pending_device_name` for lazy reconnection. The web server and task queue should work even without a connected device.
 12. **`eat_apple` is not a standalone task** — Apple consumption only works mid-operation when the game prompts for AP recovery. It's a parameter on `operation` tasks (`apple_total`, `apple_kind`), not an independent task type.
-13. **`launch_game` needs a running emulator and does not handle updates** — Always sequence `launch_game` *after* `start_emulator` so `_wait_and_reconnect()` has restored the device. The task automates CADPA splash → login tap → close-notice popups → main menu, but deliberately does *not* handle the "资料更新" resource-update dialog. If FGO ships a patch, `launch_game` will time out; the user must tap "开始更新资料" manually. See design log 010.
+13. **`launch_game` needs a running emulator and handles CN startup popups** — Always sequence `launch_game` *after* `start_emulator` so `_wait_and_reconnect()` has restored the device. The task automates CADPA splash → login tap → 资料更新 resource-update start → close/cancel startup popups → main menu. Full client APK updates still require manual install. See design log 010.
 
 ## Design Logs
 

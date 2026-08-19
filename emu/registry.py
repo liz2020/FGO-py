@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import fnmatch
 import logging
+import os
 import subprocess
 import sys
 from dataclasses import dataclass, field
@@ -177,10 +178,9 @@ class ScriptRegistry:
     def _is_alive(pid: int) -> bool:
         """Check if a process is still running."""
         try:
-            import os
             os.kill(pid, 0)
             return True
-        except (OSError, ProcessLookupError):
+        except (OSError, ProcessLookupError, SystemError):
             return False
 
     @staticmethod

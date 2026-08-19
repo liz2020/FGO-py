@@ -107,3 +107,31 @@ class TestScriptEndpoints:
         resp = client.get("/api/instances/0/adb")
         assert resp.status_code == 200
         assert resp.json()["serial"] == "127.0.0.1:5555"
+
+
+def test_shutdown_stops_scripts_without_stopping_emulator():
+    mock_backend = MagicMock()
+    mock_backend.detect.return_value = EmulatorInfo(
+        name="LDPlayer 14",
+        brand="ldplayer",
+        version="14",
+        install_dir=MagicMock(__str__=lambda s: r"C:\leidian\LDPlayer14"),
+    )
+
+    import emu.service
+
+    with patch.object(emu.service, "LDPlayerBackend", return_value=mock_backend), \
+         patch.object(emu.service.registry, "all_processes") as all_processes, \
+         patch.object(emu.service.registry, "stop") as stop_script:
+        proc = MagicMock()
+        proc.status = "running"
+        proc.script_name = "fgo"
+        proc.instance_index = 0
+        all_processes.return_value = [proc]
+
+        app = create_app()
+        with TestClient(app, raise_server_exceptions=False):
+            pass
+
+        stop_script.assert_called_once_with("fgo", 0)
+        mock_backend.stop.assert_not_called()
