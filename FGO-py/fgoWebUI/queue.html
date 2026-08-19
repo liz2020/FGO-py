@@ -23,6 +23,13 @@
             color: var(--text);
             min-height: 100vh;
             padding: 12px;
+            -webkit-touch-callout: none;
+            -webkit-user-select: none;
+            user-select: none;
+        }
+        input, textarea {
+            -webkit-user-select: text;
+            user-select: text;
         }
 
         /* Header */
@@ -44,6 +51,9 @@
             gap: 6px;
             font-size: 0.75rem;
             color: var(--text-dim);
+            -webkit-touch-callout: none;
+            -webkit-user-select: none;
+            user-select: none;
         }
         .connection .dot {
             width: 8px;
@@ -62,6 +72,14 @@
             overflow: hidden;
             position: relative;
             touch-action: none;
+            -webkit-touch-callout: none;
+            -webkit-user-select: none;
+            user-select: none;
+        }
+        .screenshot-container * {
+            -webkit-touch-callout: none;
+            -webkit-user-select: none;
+            user-select: none;
         }
         .screenshot-container img {
             width: 100%;
@@ -1267,12 +1285,14 @@ function imgToGame(offsetX, offsetY) {
 
 function onPointerDown(e) {
     if (!document.querySelector('#screenshotBox img')) return;
+    e.currentTarget.setPointerCapture?.(e.pointerId);
     pointerState = { x: e.offsetX, y: e.offsetY, time: Date.now() };
     e.preventDefault();
 }
 
 async function onPointerUp(e) {
     if (!pointerState) return;
+    e.preventDefault();
     const dx = e.offsetX - pointerState.x;
     const dy = e.offsetY - pointerState.y;
     const dt = Date.now() - pointerState.time;
@@ -1304,6 +1324,7 @@ async function onPointerUp(e) {
             body: JSON.stringify({x1: gx1, y1: gy1, x2: gx2, y2: gy2, duration})
         }).catch(e => console.error('Swipe error:', e));
     }
+    e.currentTarget.releasePointerCapture?.(e.pointerId);
     pointerState = null;
 }
 
@@ -1313,6 +1334,7 @@ function attachPointerHandlers() {
     box.addEventListener('pointerup', onPointerUp);
     box.addEventListener('pointercancel', clearPointerState);
     box.addEventListener('contextmenu', preventContext);
+    box.addEventListener('selectstart', preventContext);
 }
 
 function detachPointerHandlers() {
@@ -1321,6 +1343,7 @@ function detachPointerHandlers() {
     box.removeEventListener('pointerup', onPointerUp);
     box.removeEventListener('pointercancel', clearPointerState);
     box.removeEventListener('contextmenu', preventContext);
+    box.removeEventListener('selectstart', preventContext);
 }
 
 function preventContext(e) { e.preventDefault(); }
