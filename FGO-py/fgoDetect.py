@@ -207,6 +207,12 @@ class XDetectBase(metaclass=logMeta(logger)):
 class XDetectCN(XDetectBase):
     tmpl=IMG_CN
     ocr=OCR.ZHS
+    def isResourceUpdateDialog(self):return self._compare(self.tmpl.UPDATEBEGIN,(680,510,1010,620),.05)
+    def locateResourceUpdateBegin(self):return self._find(self.tmpl.UPDATEBEGIN,(680,510,1010,620),.05)
+    def isPopupCloseButton(self):return self._compare(self.tmpl.POPUPCLOSE,(450,500,830,630),.05)
+    def locatePopupCloseButton(self):return self._find(self.tmpl.POPUPCLOSE,(450,500,830,630),.05)
+    def isPopupCancelButton(self):return self._compare(self.tmpl.POPUPCANCEL,(250,500,630,630),.05)
+    def locatePopupCancelButton(self):return self._find(self.tmpl.POPUPCANCEL,(250,500,630,630),.05)
     @classmethod
     def saveWeeklyMission(cls):
         result=[]

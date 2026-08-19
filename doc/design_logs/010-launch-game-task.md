@@ -36,15 +36,16 @@ start_emulator → launch_game → operation ×N → stop_emulator → wait → 
 │                                                                 │
 │  2. Poll loop (screenshot every ~2s, up to timeout):            │
 │     ┌───────────────────────────────────────────────────────┐   │
-│     │  isMainInterface?  ── yes ──► DONE                    │   │
 │     │  isCloseNotice?    ── yes ──► tap the X, continue     │   │
+│     │  isUpdateBegin?    ── yes ──► tap update, continue    │   │
+│     │  isPopupButton?    ── yes ──► tap close/cancel        │   │
+│     │  isMainInterface?  ── yes ──► DONE                    │   │
 │     │  isCadpaLogo?      ── yes ──► tap center, continue    │   │
 │     │  otherwise         ────────► tap safe center, continue│   │
 │     └───────────────────────────────────────────────────────┘   │
 │                                                                 │
-│  3. If timeout without reaching main interface → error          │
-│     (the 资料更新 dialog is a known cause of this timeout;      │
-│      handling it is out of scope for this design.)              │
+│  3. If timeout without reaching an unobstructed main interface   │
+│     → error                                                     │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
@@ -62,17 +63,18 @@ The FGO app logo template is therefore **not** required. We skip step (1) from t
 
 ### Screens to detect
 
-Only two new templates are needed, plus reuse of the existing main-interface template:
+The flow uses startup/modal templates plus reuse of the existing main-interface template:
 
 | Template | File | Size | Purpose | Where it appears | Search bounding box |
 |----------|------|------|---------|------------------|---------------------|
 | `MENU` (existing) | `menu.png` | — | Main interface reached — terminate loop | Bottom-right menu icon | `(1104, 613, 1267, 676)` — already defined |
 | `CADPA16` (new) | `cadpa16.png` | 67×67 | On the pre-login / license screen | Top-right CADPA rating badge on the splash | `(1170, 0, 1275, 130)` — measured from `login_screen.png`; badge sits around `(1185, 15)–(1265, 115)` |
 | `CLOSENOTICE` (new) | `closenotice.png` | 47×42 | Post-login announcement popup close button | The `×` in the top-right of the modal | `(1180, 0, 1280, 80)` — measured from both `notification_1.png` (系统公告) and `notification_2.png` (游玩指引); X sits around `(1200, 10)–(1270, 65)` in both |
+| `UPDATEBEGIN` (CN) | `cn/updatebegin.png` | 271×66 | Start a resource update | The "开始更新资料" button on the 资料更新 dialog | `(680, 510, 1010, 620)` |
+| `POPUPCLOSE` (CN) | `cn/popupclose.png` | 264×66 | Dismiss bottom-centered "关闭" startup modals | Login reward and similar modal buttons | `(450, 500, 830, 630)` |
+| `POPUPCANCEL` (CN) | `cn/popupcancel.png` | 264×66 | Dismiss left-side "取消" startup modals | Calendar subscription and similar opt-in dialogs | `(250, 500, 630, 630)` |
 
-Both `cadpa16.png` and `closenotice.png` template crops have already been captured (see `FGO-py/fgoImage/`). They must be registered in the region-specific `Templates` class inside `fgoDetect.py` (initially CN only; JP/NA/TW use different splash art and would need their own images).
-
-> **Known but out of scope: the 资料更新 (resource-update) dialog.** When FGO ships a resource patch, an in-game modal appears with title "资料更新" and buttons "取消" / "开始更新资料". Handling it would require a third template, a new `isUpdateDialog` detector, and download-wait logic that extends the deadline while a `下载中 XX.X%` progress bar runs. **This design deliberately does not implement it.** When the update dialog is present, `launch_game` will time out and surface a clear error; the user updates the game manually and re-runs the task. See "Non-Goals" and Open Question #5 for the deferred requirements.
+Template crops live under `FGO-py/fgoImage/`. Region-specific CN startup modals are registered through `IMG_CN`; JP/NA/TW would need their own equivalent templates.
 
 ### New `Detect` methods
 
@@ -108,7 +110,7 @@ After clicking the close-notice X, sleep an extra ~1s before the next iteration.
 ### Loop shape
 
 ```python
-def launch_game(device, detect_cls, timeout_s=120):
+def launch_game(device, detect_cls, timeout_s=200):
     ldconsole.launch_app(index, "com.bilibili.fatego")
     deadline = time.monotonic() + timeout_s
     while time.monotonic() < deadline:
@@ -133,7 +135,8 @@ Notes:
 - Fresh `Detect()` per iteration — cheap enough, and avoids stale screenshots.
 - The close-notice check runs *before* CADPA because a notice popup can cover part of the main UI immediately after login, and we want to dismiss it promptly.
 - Stacked notifications (系统公告 → 游玩指引) are handled naturally: after the first X-tap, the second modal loads during the ~2 s inter-iteration sleep and is detected as another close-notice on the next pass. An earlier attempt to add a 1 s post-tap pause caused the close-tap itself to stop registering (root cause unclear — possibly `schedule.sleep` interacting with the LDPlayer input timing), so we rely solely on the trailing `schedule.sleep(2.0)` at the end of the loop.
-- If a `资料更新` dialog appears mid-flow, none of the branches match; the fallback tap at `(20, 360)` does nothing useful (it hits the dialog's outer background, not the "开始更新资料" button) and the loop will eventually time out. This is intentional — see Non-Goals.
+- The resource-update branch taps "开始更新资料" and extends the deadline by 10 minutes so the same task can wait through medium-sized resource downloads.
+- Main-interface detection runs after modal handling because the MENU button can be visible behind blocking startup dialogs.
 
 ## Task Queue Integration
 
@@ -141,13 +144,13 @@ Register a new task type in `fgoTaskQueue.py`:
 
 | Type | Params | Description |
 |------|--------|-------------|
-| `launch_game` | `timeout_s` (default 120) | Launch FGO and drive it to the main interface. Does **not** handle the resource-update dialog. |
+| `launch_game` | `timeout_s` (default 200) | Launch FGO and drive it to an unobstructed main interface, including CN resource-update and startup popup handling. |
 
 Dispatch:
 
 ```python
 case "launch_game":
-    timeout_s = task.params.get("timeout_s", 120)
+    timeout_s = task.params.get("timeout_s", 200)
     fgoKernel.launchGame(timeout_s=timeout_s)
     return {"reached_main": True}
 ```
@@ -159,7 +162,7 @@ Because FGO-py's device may be in the "disconnected placeholder" state after `st
 Add `launch_game` to the "Add Task" section in `queue.html` (introduced in 008):
 
 ```
-Task Type: [Launch Game ▾]  → Timeout (s): [120]
+Task Type: [Launch Game ▾]  → Timeout (s): [200]
 ```
 
 No other parameters. A single "Timeout" field is enough — power users can extend it for a slow first launch.
@@ -176,16 +179,11 @@ Full overnight cycle with app restart between sessions:
 6. `launch_game`
 7. `operation` — farm quest ×10
 
-Post-update recovery: if FGO pushes a resource update overnight, the first `launch_game` after `start_emulator` will time out at the 资料更新 dialog. That's the intended failure mode for this design — the user sees a clear error, manually taps "开始更新资料" once, and re-queues the workflow. Automating the update dialog is tracked as a follow-up (see Non-Goals).
+Post-update recovery: if FGO pushes a CN resource update overnight, `launch_game` taps "开始更新资料" and waits through the update before continuing the login flow.
 
 ## Non-Goals
 
 - **No CN-region assumption baked into the task type itself.** The dispatcher calls `launchGame()`, which uses the current `Detect` provider. Adding JP/NA/TW support later is just adding new template images and per-region `isCadpaLogo` / `isCloseNotice` implementations.
-- **No 资料更新 (resource-update) dialog handling.** Known but deliberately deferred to a follow-up design. Implementing it would require:
-  - A new `updatebegin.png` template captured from a real 1280×720 in-emulator update screenshot.
-  - `isUpdateDialog` / `locateUpdateBegin` methods in `DetectCN`.
-  - A branch in the poll loop that taps the button and extends the deadline while the `下载中 XX.X%` progress bar runs (downloads can be tens of MB / take minutes).
-  - Possibly a separate detector for the post-download progress screen so we don't false-terminate.
 - **No client-apk update handling.** Full client updates delivered by the app store change the APK and require manual install; out of scope for any task-queue automation.
 - **No account / server selection.** Assumes single account and default server (matches how the rest of FGO-py works).
 
@@ -201,7 +199,7 @@ Post-update recovery: if FGO pushes a resource update overnight, the first `laun
 
 ### Phase 2: Kernel function
 
-1. Add `launchGame(timeout_s=120)` to `fgoKernel.py` implementing the loop above.
+1. Add `launchGame(timeout_s=200)` to `fgoKernel.py` implementing the loop above.
 2. Call `ldconsole runapp` via a small helper that resolves the current instance's index (task worker already knows this).
 
 ### Phase 3: Task type and UI
@@ -212,7 +210,7 @@ Post-update recovery: if FGO pushes a resource update overnight, the first `laun
 
 ### Phase 4: Documentation
 
-1. Add pitfall to AGENTS.md: `launch_game` requires a running emulator — always sequence it after `start_emulator`. Note that it does not handle the 资料更新 dialog.
+1. Add pitfall to AGENTS.md: `launch_game` requires a running emulator — always sequence it after `start_emulator`. Note that it handles CN resource updates but not client APK updates.
 2. Create `doc/design_logs/impl_learnings/010-launch-game-task.md` at implementation time to capture any surprises with the login flow.
 
 ## Open Questions
@@ -220,5 +218,5 @@ Post-update recovery: if FGO pushes a resource update overnight, the first `laun
 1. **CADPA logo bounding box** — Measured at `(1170, 0, 1275, 130)` from the CN login screenshot. May shift between game versions; the bbox has ~20 px of padding on each side to tolerate small movements.
 2. **Server-selection screen** — If the account has multiple bound servers, an extra tap may be needed. Deferred until a user hits it.
 3. **Multiple notification popups** — Some days FGO stacks two announcement modals (e.g., 游戏公告 followed by 游玩指引). The loop handles this naturally (dismiss one, next iteration sees the second). Both sample popups (`notification_1.png` and `notification_2.png`) share the identical top-right X-button asset, so a single `closenotice.png` template covers both. Confirm this still holds for maintenance / event popups when they appear.
-4. **Timeout default** — 120s is a guess. A cold start on a fresh emulator can take longer; may need to bump to 180s after real-world testing.
-5. **资料更新 handling as a follow-up** — Tracked but not implemented. When implemented, it will need its own template + detector + deadline-extension logic and probably a new design log (`011-launch-game-update-dialog.md`).
+4. **Timeout default** — 200s gives cold emulator/game startup and common startup popups more room before surfacing a timeout.
+5. **资料更新 download progress** — The task starts the CN resource update and extends the deadline, but it does not parse the download percentage. Very large patches may need a longer `timeout_s`.

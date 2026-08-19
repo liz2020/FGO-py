@@ -129,3 +129,17 @@ class TestProcessLifecycle:
             running = registry.get_running("FGO-py")
 
         assert len(running) == 0
+
+    def test_get_running_filters_windows_stale_pid_system_error(self, registry, fgo_script):
+        registry.register(fgo_script)
+
+        with patch("subprocess.Popen") as mock_popen:
+            mock_proc = MagicMock()
+            mock_proc.pid = 12345
+            mock_popen.return_value = mock_proc
+            registry.start("FGO-py", 0, "127.0.0.1:5555")
+
+        with patch("emu.registry.os.kill", side_effect=SystemError):
+            running = registry.get_running("FGO-py")
+
+        assert len(running) == 0
