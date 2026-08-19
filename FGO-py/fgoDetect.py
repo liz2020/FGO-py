@@ -57,7 +57,7 @@ class XDetectBase(metaclass=logMeta(logger)):
     def _select(self,img,rect=(0,0,1280,720),threshold=.2):return(lambda x:numpy.argmin(x)if threshold>min(x)else None)([self._loc(i,rect)[0]for i in img])
     def _find(self,img,rect=(0,0,1280,720),threshold=.05):return(lambda loc:(rect[0]+loc[2][0]+(img[0].shape[1]>>1),rect[1]+loc[2][1]+(img[0].shape[0]>>1))if loc[0]<threshold else None)(self._loc(img,rect))
     def _ocrInt(self,rect):return OCR.EN.ocrInt(self._crop(rect))
-    def _ocrText(self,rect):raise NotImplementedError
+    def _ocrText(self,rect):return self.ocr.ocrText(self._crop(rect))
     def _count(self,img,rect=(0,0,1280,720),threshold=.1):return cv2.connectedComponents((cv2.matchTemplate(self._crop(rect),img[0],cv2.TM_SQDIFF_NORMED,mask=img[1])<threshold).astype(numpy.uint8))[0]-1
     @staticmethod
     def _stack(origin,increment,critic):return numpy.vstack((origin,increment[cv2.minMaxLoc(cv2.matchTemplate(increment,origin[-critic:],cv2.TM_SQDIFF_NORMED))[2][1]+critic:]))
@@ -99,6 +99,10 @@ class XDetectBase(metaclass=logMeta(logger)):
     def setupWeeklyMission(self):XDetectBase._weeklyMission=self._crop((603,250,1092,710))
     def isAddFriend(self):return self._compare(self.tmpl.ADDFRIEND,(161,574,499,656))
     def isApEmpty(self):return self._compare(self.tmpl.APEMPTY,(522,582,758,652))
+    def isAutoFormationPrompt(self):
+        try:text=''.join(self.ocr.ocrArea(self._crop((120,120,1160,690)))).upper()
+        except(TypeError,ValueError,IndexError):return False
+        return('AUTO'in text and('FORMATION'in text or'PARTY'in text))or('自动'in text and'编队'in text)or('自動'in text and('編隊'in text or'編成'in text))
     def isBattleContinue(self):return self._compare(self.tmpl.BATTLECONTINUE,(704,530,976,618))
     def isBattleDefeated(self):return self._compare(self.tmpl.DEFEATED,(603,100,690,176))
     def isBattleFinished(self):return self._compare(self.tmpl.DROPITEM,(110,30,264,76))
@@ -126,6 +130,13 @@ class XDetectBase(metaclass=logMeta(logger)):
     def isSkillCastFailed(self):return self._compare(self.tmpl.SKILLERROR,(504,528,776,597))
     def isSkillNone(self):return self._compare(self.tmpl.CROSS,(1070,45,1105,79))or self._compare(self.tmpl.CROSS,(1093,164,1126,196))
     def isSkillReady(self,i,j):return not self._compare(self.tmpl.STILL,(35+318*i+88*j,598,55+318*i+88*j,618),.2)
+    def isStorySkip(self):
+        if self._compare(self.tmpl.STORYSKIP,(1110,0,1280,90),.08):return True
+        try:
+            crop=self._crop((1110,0,1280,90))
+            text=(self.ocr.ocrText(crop)+'|'.join(self.ocr.ocrArea(crop))).upper()
+        except(TypeError,ValueError,IndexError):return False
+        return 'SKIP'in text or'跳过'in text or'跳過'in text or'过'in text or'過'in text
     def isSpecialDropRainbowBox(self):return self._compare(self.tmpl.RAINBOW,(957,2,990,40),.1)
     def isSpecialDropSuspended(self):return self._compare(self.tmpl.CLOSE,(6,14,28,68))
     def isSummonHistoryListEnd(self):return self._isListEnd((1142,552))

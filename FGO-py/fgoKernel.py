@@ -511,6 +511,70 @@ class Battle:
             'time':time.time()-self.start,
             'material':self.material,
         }
+
+def skipStoryToBattle(timeout_s=90):
+    """Advance story/dialog screens before auto battle.
+
+    Returns "battle" when battle controls appear, "done" when the flow reaches a
+    non-battle endpoint, and "timeout" when no stable endpoint is reached.
+    """
+    deadline=time.time()+timeout_s
+    logged=False
+    while time.time()<deadline:
+        schedule.checkStop()
+        d=Detect(0,.3)
+        if d.isTurnBegin():
+            return 'battle'
+        if d.isBattleFinished()or d.isBattleDefeated():
+            return 'done'
+        if d.isMainInterface()or d.isBattleContinue()or d.isChooseFriend():
+            return 'done'
+        if d.isBattleFormation():
+            _startFormation(d)
+            continue
+        if not logged:
+            logger.info('Skipping story/dialog before auto battle')
+            logged=True
+        _advanceStory(d)
+    return 'timeout'
+
+def skipStoryAfterBattle(timeout_s=90):
+    """Advance result screens and skip any post-battle story that appears."""
+    deadline=time.time()+timeout_s
+    logged=False
+    while time.time()<deadline:
+        schedule.checkStop()
+        d=Detect(0,.3)
+        if d.isMainInterface()or d.isBattleContinue()or d.isBattleFormation()or d.isChooseFriend()or d.isTurnBegin():
+            return True
+        if not logged:
+            logger.info('Skipping story/dialog after auto battle')
+            logged=True
+        _advanceStory(d)
+    return False
+
+def _advanceStory(d):
+    if d.isAutoFormationPrompt():
+        _useAutoFormation()
+    elif d.isStorySkip():
+        fgoDevice.device.perform('\x08K',(500,700))
+    elif d.isAddFriend():
+        fgoDevice.device.perform('X',(300,))
+    elif d.isSpecialDropSuspended():
+        fgoDevice.device.perform('\x1B',(300,))
+    else:
+        fgoDevice.device.perform(' ',(700,))
+
+def _startFormation(d):
+    if d.isAutoFormationPrompt():
+        _useAutoFormation()
+    else:
+        fgoDevice.device.perform(' ',(1000,))
+
+def _useAutoFormation():
+    logger.info('Using auto formation before auto battle')
+    fgoDevice.device.perform('\xDEL ',(1000,1500,1000))
+
 class Main:
     teamIndex=0
     autoFormation=False
