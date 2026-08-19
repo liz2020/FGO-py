@@ -49,6 +49,7 @@ def index():
 
 @app.route('/api/connect',methods=['POST'])
 def connect():
+    fgoDevice._pending_device_name = request.form['serial']
     fgoDevice.device=fgoDevice.Device(request.form['serial'])
     return fgoDevice.device.name
 
@@ -147,12 +148,5 @@ def main(config, port=15000):
     # Set emu manager URL for progress reporting
     global _emu_manager_url, _instance_index
     _emu_manager_url = 'http://127.0.0.1:15100'
-    # Extract instance index from device name if available
-    try:
-        if hasattr(fgoDevice, 'device') and fgoDevice.device:
-            name = getattr(fgoDevice.device, 'name', '')
-            if 'ldplayer:' in name:
-                _instance_index = int(name.split(':')[1])
-    except Exception:
-        pass
+    _instance_index = fgoDevice.configuredLDPlayerIndex(0)
     app.run(host='127.0.0.1', port=port)

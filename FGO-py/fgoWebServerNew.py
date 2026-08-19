@@ -385,14 +385,7 @@ async def device_status():
 def main(config=None, port: int = 15000):
     import uvicorn
     # Configure progress reporting to emu manager
-    instance_index = 0
-    try:
-        if hasattr(fgoDevice, 'device') and fgoDevice.device:
-            name = getattr(fgoDevice.device, 'name', '')
-            if 'ldplayer:' in name:
-                instance_index = int(name.split(':')[1])
-    except Exception:
-        pass
+    instance_index = fgoDevice.configuredLDPlayerIndex(0)
     configure_progress('http://127.0.0.1:15100', instance_index)
     uvicorn.run(app, host="0.0.0.0", port=port, log_level="info", access_log=False)
 

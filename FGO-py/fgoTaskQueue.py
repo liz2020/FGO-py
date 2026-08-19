@@ -37,6 +37,10 @@ def configure_progress(emu_manager_url: str, instance_index: int):
     _instance_index = instance_index
 
 
+def _manager_instance_index() -> int:
+    return fgoDevice.configuredLDPlayerIndex(_instance_index)
+
+
 def _report_progress(current: int, total: int, status: str = "running", detail: str = ""):
     """Report farming progress to emu manager and broadcast to WebSocket clients."""
     # Update active task's progress for local WebSocket clients
@@ -49,7 +53,7 @@ def _report_progress(current: int, total: int, status: str = "running", detail: 
         return
     try:
         data = json.dumps({
-            "instance_index": _instance_index,
+            "instance_index": _manager_instance_index(),
             "current": current,
             "total": total,
             "status": status,
@@ -438,7 +442,7 @@ class TaskWorker(threading.Thread):
                 status = self._get_instance_status()
                 if status == "stopped":
                     raise RuntimeError(
-                        f"Emulator instance {_instance_index} is already stopped."
+                        f"Emulator instance {_manager_instance_index()} is already stopped."
                     )
                 _report_progress(0, 0, "running", "Stopping emulator")
                 self._call_emu_manager("stop")
@@ -452,7 +456,7 @@ class TaskWorker(threading.Thread):
                 status = self._get_instance_status()
                 if status == "running":
                     raise RuntimeError(
-                        f"Emulator instance {_instance_index} is already running; "
+                        f"Emulator instance {_manager_instance_index()} is already running; "
                         "stop it first or remove this task."
                     )
                 _report_progress(0, 0, "running", "Starting emulator")
@@ -495,7 +499,7 @@ class TaskWorker(threading.Thread):
             raise RuntimeError("Emu manager URL not configured")
         try:
             req = urllib.request.Request(
-                f"{_emu_manager_url}/api/instances/{_instance_index}/{action}",
+                f"{_emu_manager_url}/api/instances/{_manager_instance_index()}/{action}",
                 data=b"",
                 headers={"Content-Type": "application/json"},
                 method="POST",
@@ -511,7 +515,7 @@ class TaskWorker(threading.Thread):
             return "unknown"
         try:
             req = urllib.request.Request(
-                f"{_emu_manager_url}/api/instances/{_instance_index}",
+                f"{_emu_manager_url}/api/instances/{_manager_instance_index()}",
                 method="GET",
             )
             with urllib.request.urlopen(req, timeout=10) as resp:

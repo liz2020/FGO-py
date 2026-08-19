@@ -5,6 +5,32 @@ from fgoSchedule import schedule
 logger=getLogger('Device')
 
 helpers={}
+_pending_device_name = None
+
+
+def parseLDPlayerIndex(name):
+    if not isinstance(name, str) or not name.startswith('ldplayer:'):
+        return None
+    try:
+        return int(name.split(':', 1)[1])
+    except (TypeError, ValueError):
+        return None
+
+
+def configuredLDPlayerIndex(default=0):
+    candidates = []
+    dev = globals().get('device')
+    if dev is not None:
+        candidates.append(getattr(dev, 'name', None))
+        candidates.append(getattr(getattr(dev, 'I', None), 'name', None))
+    candidates.append(globals().get('_pending_device_name'))
+    for name in candidates:
+        index = parseLDPlayerIndex(name)
+        if index is not None:
+            return index
+    return default
+
+
 def regHelper(func):
     helpers[func.__name__]=func
     return func
