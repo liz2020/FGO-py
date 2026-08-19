@@ -594,7 +594,16 @@ def run_auto_battle(broadcast: Callable):
         broadcast({"event": "auto_battle_started", "state": task_queue.get_state()})
         try:
             schedule.reset()
-            fgoKernel.Battle()()
+            fgoKernel.fuse.reset()
+            pre_battle = fgoKernel.skipStoryToBattle()
+            if pre_battle == "timeout":
+                raise TimeoutError("Auto battle did not reach a battle screen after skipping story")
+            if pre_battle == "battle":
+                fgoKernel.Battle()()
+            else:
+                logger.info("Auto battle completed without a battle screen")
+            if pre_battle == "battle" and not fgoKernel.skipStoryAfterBattle():
+                logger.warning("Auto battle did not finish post-battle story cleanup before timeout")
             logger.info("Auto battle completed")
         except ScriptStop as e:
             logger.info(f"Auto battle cancelled: {e}")

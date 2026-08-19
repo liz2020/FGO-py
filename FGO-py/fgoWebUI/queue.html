@@ -119,23 +119,6 @@
             color: #000;
             background: var(--warning);
         }
-        .btn-manual {
-            padding: 4px 12px;
-            border-radius: 6px;
-            font-size: 0.8rem;
-            font-weight: 600;
-            cursor: pointer;
-            border: 1px solid #7c4dff;
-            background: transparent;
-            color: #7c4dff;
-        }
-        .btn-manual:disabled { opacity: 0.4; cursor: not-allowed; }
-        .btn-manual.active {
-            border-color: #7c4dff;
-            color: #fff;
-            background: #7c4dff;
-        }
-
         /* Active Task Box */
         .active-box {
             background: var(--surface);
@@ -429,11 +412,10 @@
     </div>
 
     <!-- Game Screenshot -->
-    <div class="screenshot-container" id="screenshotBox" onclick="takeScreenshot()">
+    <div class="screenshot-container" id="screenshotBox">
         <div class="no-image">Tap to capture screenshot</div>
     </div>
     <div class="screenshot-controls">
-        <button class="btn-manual" id="btnManual" onclick="toggleManual()">🖐 Manual</button>
         <button class="btn-auto-battle" id="btnAutoBattle" onclick="startAutoBattle()">⚔ Auto Battle</button>
         <button class="btn-live" id="btnLive" onclick="toggleLive()">● Live</button>
     </div>
@@ -538,8 +520,6 @@ let state = { active: null, pending: [], running: false };
 let liveInterval = null;
 let liveActive = false;
 let autoBattleActive = false;
-let manualMode = false;
-let preManualLiveState = false;
 let pointerState = null;
 let expandedIds = new Set(['active']);  // active task expanded by default
 let activeProgress = null;  // {current, total, detail}
@@ -639,15 +619,6 @@ function handleEvent(msg) {
             autoBattleActive = false;
             render();
             break;
-        case 'manual_mode':
-            manualMode = msg.active;
-            if (manualMode) {
-                enableManualPreview();
-            } else {
-                disableManualPreview();
-            }
-            render();
-            break;
     }
 }
 
@@ -657,7 +628,6 @@ function render() {
     renderPending();
     renderButton();
     renderAutoBattle();
-    renderManual();
 }
 
 function renderActive() {
@@ -781,7 +751,7 @@ function renderLoopItem(task, idx) {
 
 function renderButton() {
     const btn = document.getElementById('btnControl');
-    if (manualMode || autoBattleActive) {
+    if (autoBattleActive) {
         btn.className = 'btn-control start';
         btn.textContent = '▶ Start';
         btn.disabled = true;
@@ -1040,7 +1010,6 @@ function onChapterChange() {
 
 // --- Live screenshot toggle ---
 function toggleLive() {
-    if (manualMode) return;  // Can't turn off live during manual mode
     const btn = document.getElementById('btnLive');
     if (liveActive) {
         stopLive();
@@ -1084,24 +1053,24 @@ async function startAutoBattle() {
             console.error('Cancel auto battle error:', e);
         }
     } else {
-        // Exit manual mode first if active, keep live on
-        if (manualMode) {
-            await fetch(`${API}/api/control/manual`, {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({active: false})
-            });
-            // Ensure live stays active after exiting manual mode
-            if (!liveActive) {
-                startLive();
-                document.getElementById('btnLive').classList.add('active');
-            }
-        }
         try {
             await fetch(`${API}/api/control/auto-battle`, { method: 'POST' });
         } catch (e) {
             console.error('Auto battle error:', e);
         }
+    }
+}
+
+async function cancelAutoBattleForManualInput() {
+    if (!autoBattleActive) return;
+    try {
+        const res = await fetch(`${API}/api/control/auto-battle/cancel`, { method: 'POST' });
+        if (res.ok || res.status === 404) {
+            autoBattleActive = false;
+            render();
+        }
+    } catch (e) {
+        console.error('Cancel auto battle for manual input error:', e);
     }
 }
 
@@ -1287,55 +1256,6 @@ async function reorderQueue(fromId, beforeId) {
     }
 }
 
-// --- Manual Mode ---
-function renderManual() {
-    const btn = document.getElementById('btnManual');
-    btn.className = manualMode ? 'btn-manual active' : 'btn-manual';
-    btn.textContent = manualMode ? '🖐 Manual ON' : '🖐 Manual';
-    // Live button can't be toggled off during manual mode
-    const btnLive = document.getElementById('btnLive');
-    btnLive.disabled = manualMode;
-}
-
-async function toggleManual() {
-    const newState = !manualMode;
-    try {
-        await fetch(`${API}/api/control/manual`, {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({active: newState})
-        });
-    } catch (e) {
-        console.error('Toggle manual error:', e);
-    }
-}
-
-function enableManualPreview() {
-    // Remember if live was on before
-    preManualLiveState = liveActive;
-    // Force live on
-    stopLive();
-    const btn = document.getElementById('btnLive');
-    btn.classList.add('active');
-    startLive();
-    // Attach pointer handlers
-    attachPointerHandlers();
-}
-
-function disableManualPreview() {
-    // Restore live to previous state
-    stopLive();
-    if (preManualLiveState) {
-        const btn = document.getElementById('btnLive');
-        btn.classList.add('active');
-        startLive();
-    } else {
-        document.getElementById('btnLive').classList.remove('active');
-    }
-    // Remove pointer handlers
-    detachPointerHandlers();
-}
-
 function imgToGame(offsetX, offsetY) {
     const img = document.querySelector('#screenshotBox img');
     if (!img) return [0, 0];
@@ -1346,19 +1266,20 @@ function imgToGame(offsetX, offsetY) {
 }
 
 function onPointerDown(e) {
-    if (!manualMode) return;
+    if (!document.querySelector('#screenshotBox img')) return;
     pointerState = { x: e.offsetX, y: e.offsetY, time: Date.now() };
     e.preventDefault();
 }
 
-function onPointerUp(e) {
-    if (!manualMode || !pointerState) return;
+async function onPointerUp(e) {
+    if (!pointerState) return;
     const dx = e.offsetX - pointerState.x;
     const dy = e.offsetY - pointerState.y;
     const dt = Date.now() - pointerState.time;
     const dist = Math.sqrt(dx * dx + dy * dy);
 
     const [gx1, gy1] = imgToGame(pointerState.x, pointerState.y);
+    await cancelAutoBattleForManualInput();
     if (dist < 10 && dt >= 500) {
         // Long hold
         fetch(`${API}/api/input/hold`, {
@@ -1390,25 +1311,26 @@ function attachPointerHandlers() {
     const box = document.getElementById('screenshotBox');
     box.addEventListener('pointerdown', onPointerDown);
     box.addEventListener('pointerup', onPointerUp);
+    box.addEventListener('pointercancel', clearPointerState);
     box.addEventListener('contextmenu', preventContext);
-    // Prevent default click (takeScreenshot) in manual mode
-    box.removeAttribute('onclick');
 }
 
 function detachPointerHandlers() {
     const box = document.getElementById('screenshotBox');
     box.removeEventListener('pointerdown', onPointerDown);
     box.removeEventListener('pointerup', onPointerUp);
+    box.removeEventListener('pointercancel', clearPointerState);
     box.removeEventListener('contextmenu', preventContext);
-    box.setAttribute('onclick', 'takeScreenshot()');
 }
 
 function preventContext(e) { e.preventDefault(); }
+function clearPointerState() { pointerState = null; }
 
 // --- Init ---
 connectWS();
 fetchCatalog();
 fetchState();
+attachPointerHandlers();
 // Check device status before starting live
 fetch(`${API}/api/device-status`).then(r => r.json()).then(data => {
     if (data.available) {

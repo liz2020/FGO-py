@@ -190,8 +190,6 @@ async def remove_child(loop_id: str, req: LoopChildRequest):
 
 @app.post("/api/control/start")
 async def control_start():
-    if _manual_mode:
-        raise HTTPException(409, "Manual mode is active")
     task_queue.start()
     state = task_queue.get_state()
     ws_manager.enqueue({"event": "state_updated", "state": state})
@@ -221,8 +219,6 @@ async def reorder_queue(req: ReorderRequest):
 
 @app.post("/api/control/auto-battle")
 async def auto_battle():
-    if _manual_mode:
-        raise HTTPException(409, "Manual mode is active")
     if task_queue.is_busy():
         raise HTTPException(409, "A task is currently running")
     if is_auto_battle_active():
@@ -251,15 +247,6 @@ async def auto_battle_status():
     return {"active": is_auto_battle_active()}
 
 
-# --- Manual mode ---
-
-_manual_mode = False
-
-
-class ManualModeRequest(BaseModel):
-    active: bool
-
-
 class TapRequest(BaseModel):
     x: int
     y: int
@@ -277,20 +264,6 @@ class HoldRequest(BaseModel):
     x: int
     y: int
     duration: int = 1000
-
-
-@app.post("/api/control/manual")
-async def toggle_manual(req: ManualModeRequest):
-    global _manual_mode
-    if req.active:
-        # Cancel running work before entering manual mode
-        if is_auto_battle_active():
-            cancel_auto_battle()
-        if task_queue.is_busy():
-            task_queue.cancel()
-    _manual_mode = req.active
-    ws_manager.enqueue({"event": "manual_mode", "active": req.active})
-    return {"ok": True}
 
 
 @app.post("/api/input/tap")
