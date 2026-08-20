@@ -108,6 +108,10 @@ class LoopChildRequest(BaseModel):
     task_id: str
 
 
+class AutoBattleRequest(BaseModel):
+    auto_select_support: bool = True
+
+
 # --- REST endpoints ---
 
 @app.get("/")
@@ -218,7 +222,7 @@ async def reorder_queue(req: ReorderRequest):
 
 
 @app.post("/api/control/auto-battle")
-async def auto_battle():
+async def auto_battle(req: AutoBattleRequest | None = None):
     if task_queue.is_busy():
         raise HTTPException(409, "A task is currently running")
     if is_auto_battle_active():
@@ -229,7 +233,8 @@ async def auto_battle():
         if loop and loop.is_running():
             loop.call_soon_threadsafe(ws_manager.enqueue, event)
 
-    if not run_auto_battle(_broadcast):
+    auto_select_support = True if req is None else req.auto_select_support
+    if not run_auto_battle(_broadcast, auto_select_support=auto_select_support):
         raise HTTPException(409, "Cannot start auto battle")
     return {"ok": True}
 

@@ -587,7 +587,7 @@ def cancel_auto_battle():
         schedule.stop('Auto battle cancelled')
 
 
-def run_auto_battle(broadcast: Callable):
+def run_auto_battle(broadcast: Callable, auto_select_support: bool = True):
     """Run a one-off Battle() in a new thread. Broadcasts start/finish events."""
     global _auto_battle_active
     with _auto_battle_lock:
@@ -601,7 +601,7 @@ def run_auto_battle(broadcast: Callable):
         try:
             schedule.reset()
             fgoKernel.fuse.reset()
-            pre_battle = fgoKernel.skipStoryToBattle()
+            pre_battle = fgoKernel.skipStoryToBattle(auto_select_support=auto_select_support)
             if pre_battle == "timeout":
                 raise TimeoutError("Auto battle did not reach a battle screen after skipping story")
             if pre_battle == "battle":
