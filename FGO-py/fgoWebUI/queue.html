@@ -137,6 +137,19 @@
             color: #000;
             background: var(--warning);
         }
+        .support-toggle {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            font-size: 0.8rem;
+            color: var(--text-dim);
+            cursor: pointer;
+        }
+        .support-toggle input[type="checkbox"] {
+            width: 16px;
+            height: 16px;
+            accent-color: var(--warning);
+        }
         /* Active Task Box */
         .active-box {
             background: var(--surface);
@@ -435,6 +448,10 @@
     </div>
     <div class="screenshot-controls">
         <button class="btn-auto-battle" id="btnAutoBattle" onclick="startAutoBattle()">⚔ Auto Battle</button>
+        <label class="support-toggle" title="Auto select the support servant before battle">
+            <input type="checkbox" id="chkAutoSelectSupport" checked>
+            助战
+        </label>
         <button class="btn-live" id="btnLive" onclick="toggleLive()">● Live</button>
     </div>
 
@@ -1082,14 +1099,17 @@ function stopLive() {
 // --- Auto Battle ---
 function renderAutoBattle() {
     const btn = document.getElementById('btnAutoBattle');
+    const support = document.getElementById('chkAutoSelectSupport');
     if (autoBattleActive) {
         btn.className = 'btn-auto-battle active';
         btn.textContent = '⚔ Cancel';
         btn.disabled = false;
+        support.disabled = true;
     } else {
         btn.className = 'btn-auto-battle';
         btn.textContent = '⚔ Auto Battle';
         btn.disabled = !!(state.active && state.active.status === 'active');
+        support.disabled = btn.disabled;
     }
 }
 
@@ -1103,7 +1123,13 @@ async function startAutoBattle() {
         }
     } else {
         try {
-            await fetch(`${API}/api/control/auto-battle`, { method: 'POST' });
+            await fetch(`${API}/api/control/auto-battle`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    auto_select_support: document.getElementById('chkAutoSelectSupport').checked
+                })
+            });
         } catch (e) {
             console.error('Auto battle error:', e);
         }

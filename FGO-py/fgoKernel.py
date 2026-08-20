@@ -529,7 +529,7 @@ class Battle:
             'material':self.material,
         }
 
-def skipStoryToBattle(timeout_s=90):
+def skipStoryToBattle(timeout_s=90, auto_select_support=True):
     """Advance story/dialog screens before auto battle.
 
     Returns "battle" when battle controls appear, "done" when the flow reaches a
@@ -544,7 +544,12 @@ def skipStoryToBattle(timeout_s=90):
             return 'battle'
         if d.isBattleFinished()or d.isBattleDefeated():
             return 'done'
-        if d.isMainInterface()or d.isBattleContinue()or d.isChooseFriend():
+        if d.isChooseFriend():
+            if not auto_select_support:
+                return 'done'
+            _selectTopSupport()
+            continue
+        if d.isMainInterface()or d.isBattleContinue():
             return 'done'
         if d.isBattleFormation():
             _startFormation(d)
@@ -587,6 +592,10 @@ def _startFormation(d):
         _useAutoFormation()
     else:
         fgoDevice.device.perform(' ',(1000,))
+
+def _selectTopSupport():
+    logger.info('Selecting top support before auto battle')
+    fgoDevice.device.press('8')
 
 def _useAutoFormation():
     logger.info('Using auto formation before auto battle')
