@@ -555,7 +555,9 @@ def skipStoryToBattle(timeout_s=180, auto_select_support=True, support_name='', 
             _startFormation(d)
             continue
         if not skip_story:
-            return 'done'
+            if d.isStorySkip() or d.locateStorySkipConfirmButton():
+                return 'done'
+            continue
         if not logged:
             logger.info('Skipping story/dialog before auto battle')
             logged=True
