@@ -690,6 +690,43 @@ def _useAutoFormation():
 def _confirmBattleStart():
     fgoDevice.device.perform(' M ',(2000,2000,10000))
 
+def findNextChapter(timeout_s=30,steps=2,target_offset_y=130,settle_ms=1200,on_progress=None):
+    """Follow the highlighted 下一个 marker to the pre-battle screen."""
+    _notify=on_progress if callable(on_progress)else lambda _:None
+    marker_targets=(
+        ('sidebar',(560,80,1280,180),(230,55)),
+        ('map',(0,80,1000,650),(0,target_offset_y)),
+    )
+    clicked=[]
+    deadline=time.time()+timeout_s
+    while time.time()<deadline:
+        schedule.checkStop()
+        d=Detect(0,.3)
+        if d.isBattleFormation()or d.isChooseFriend()or d.isTurnBegin():
+            return {'clicks':clicked,'reached_pre_battle':True,'reached_battle':True}
+        if d.isStorySkip():
+            return {'clicks':clicked,'reached_pre_battle':True,'reached_battle':False}
+        if start:=d.locateBattleWarningStartButton():
+            logger.info(f'Confirming battle warning at {start}')
+            _notify('Confirming battle warning')
+            fgoDevice.device.touch(start,settle_ms)
+            continue
+        if len(clicked)>=steps:
+            continue
+        _notify(f'Finding next marker {len(clicked)+1}/{steps}')
+        for kind,rect,offset in marker_targets:
+            pos=d.findNextMarker(rect)
+            if not pos:
+                continue
+            target=(max(0,min(1279,int(pos[0]+offset[0]))),max(0,min(719,int(pos[1]+offset[1]))))
+            logger.info(f'Clicking {kind} next marker {len(clicked)+1}/{steps}: marker={pos}, target={target}')
+            fgoDevice.device.touch(target,settle_ms)
+            clicked.append({'kind':kind,'marker':pos,'target':target})
+            break
+    if clicked:
+        return {'clicks':clicked,'reached_pre_battle':False,'reached_battle':False}
+    raise TimeoutError(f'Next marker not found within {timeout_s}s')
+
 def _fixFormationRestriction():
     logger.info('Formation restriction detected; closing modal and using auto formation')
     fgoDevice.device.perform('Z',(500,))

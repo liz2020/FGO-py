@@ -574,6 +574,8 @@
             <label>Task</label>
             <select id="selTaskType" onchange="onTaskTypeChange()">
                 <option value="wait">Wait</option>
+                <option value="find_next_chapter">Find Next Chapter</option>
+                <option value="start_auto_battle">Start Auto Battle</option>
                 <option value="stop_emulator">Stop Emulator</option>
                 <option value="start_emulator">Start Emulator</option>
                 <option value="launch_game">Launch Game</option>
@@ -888,6 +890,8 @@ function describeTask(task) {
         return `${name} ×${count}`;
     }
     if (task.type === 'battle') return 'Battle';
+    if (task.type === 'find_next_chapter') return 'Find Next Chapter';
+    if (task.type === 'start_auto_battle') return 'Start Auto Battle';
     if (task.type === 'wait') return `Wait ${task.params.minutes || '?'} min`;
     if (task.type === 'stop_emulator') return 'Stop Emulator';
     if (task.type === 'start_emulator') return 'Start Emulator';
@@ -984,6 +988,15 @@ async function addTaskToQueue() {
         params.minutes = parseInt(document.getElementById('inputWaitMinutes').value) || 1;
     } else if (type === 'launch_game') {
         params.timeout_s = parseInt(document.getElementById('inputLaunchGameTimeout').value) || 200;
+    } else if (type === 'find_next_chapter') {
+        params = { timeout_s: 30, steps: 2, target_offset_y: 130, settle_ms: 1200 };
+    } else if (type === 'start_auto_battle') {
+        const supportName = document.getElementById('inputSupportName').value.trim();
+        params = {
+            auto_select_support: document.getElementById('chkAutoSelectSupport').checked,
+            timeout_s: Math.max(1, parseInt(document.getElementById('inputAutoBattleTimeout').value) || 180),
+        };
+        if (supportName) params.support_name = supportName;
     } else if (type === 'loop') {
         const infinite = document.getElementById('chkLoopInfinite').checked;
         const remaining = parseInt(document.getElementById('inputLoopCount').value) || 3;
@@ -1280,6 +1293,8 @@ function describeTaskDetails(task) {
         return lines.join('<br>') || 'No details';
     }
     if (task.type === 'battle') return 'One-off battle';
+    if (task.type === 'find_next_chapter') return `Follow the 下一个 marker to the chapter, then follow the sidebar 下一个 marker to the battle (timeout ${task.params.timeout_s || 30}s)`;
+    if (task.type === 'start_auto_battle') return `Skip pre-battle story and run auto battle (timeout ${task.params.timeout_s || 180}s)`;
     if (task.type === 'wait') return `Wait for ${task.params.minutes || '?'} minutes`;
     if (task.type === 'stop_emulator') return 'Stop the emulator instance';
     if (task.type === 'start_emulator') return 'Start the emulator instance';
