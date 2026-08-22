@@ -576,6 +576,8 @@ def skipStoryAfterBattle(timeout_s=90):
     return False
 
 def _advanceStory(d):
+    if _dismissPreBattlePopup(d):
+        return
     if d.isAutoFormationPrompt():
         _useAutoFormation()
     elif d.isStorySkip():
@@ -592,6 +594,8 @@ def _skipStory():
     fgoDevice.device.touch((827,562),700)
 
 def _startFormation(d):
+    if _dismissPreBattlePopup(d):
+        return
     if d.isBattleFormationRestriction():
         _resolveFormationRestriction()
         _confirmBattleStart()
@@ -608,6 +612,19 @@ def _selectSupport(support_name=''):
             return
         logger.warning('Support OCR text not found after refresh; selecting top support: %s', support_name)
     _selectTopSupport()
+
+def _dismissPreBattlePopup(d):
+    for locator in ('locatePopupCloseButton','locatePopupCancelButton'):
+        locate=getattr(d,locator,None)
+        if not locate:
+            continue
+        try:pos=locate()
+        except AttributeError:continue
+        if pos:
+            logger.info(f'Dismissing pre-battle popup at {pos}')
+            fgoDevice.device.touch(pos,700)
+            return True
+    return False
 
 def _selectTopSupport():
     logger.info('Selecting top support before auto battle')
@@ -645,6 +662,8 @@ def _refreshSupportList():
 def _scanSupportByName(support_name, maxScrolls=20):
     for _ in range(maxScrolls):
         d=Detect(0,.3)
+        if _dismissPreBattlePopup(d):
+            continue
         if pos:=_supportTextOnScreen(d,support_name):
             fgoDevice.device.touch(pos,700)
             return True
@@ -707,14 +726,21 @@ class Main:
                         return logger.info('No Storm Pot')
                     if Detect(.7,.3).isApEmpty()and not self.eatApple():return logger.info('Ap Empty')
                     self.chooseFriend()
-                    while not Detect(0,.3).isBattleFormation():pass
-                    if Detect.cache.isBattleFormationRestriction():
+                    while True:
+                        d=Detect(0,.3)
+                        if _dismissPreBattlePopup(d):continue
+                        if d.isBattleFormation():break
+                    if d.isBattleFormationRestriction():
                         _resolveFormationRestriction()
                     else:
-                        if self.teamIndex and Detect.cache.getTeamIndex()+1!=self.teamIndex:fgoDevice.device.perform('\x70\x71\x72\x73\x74\x75\x76\x77\x78\x79\x7A\x7B\x7C\x7D\x7E'[self.teamIndex-1],(1000,))
+                        if self.teamIndex and d.getTeamIndex()+1!=self.teamIndex:fgoDevice.device.perform('\x70\x71\x72\x73\x74\x75\x76\x77\x78\x79\x7A\x7B\x7C\x7D\x7E'[self.teamIndex-1],(1000,))
                         if self.autoFormation:fgoDevice.device.perform('\xDEL ',(1000,1500,1000))
                     _confirmBattleStart()
-                    if Detect(0,.3).isBattleFormationRestriction():
+                    d=Detect(0,.3)
+                    if _dismissPreBattlePopup(d):
+                        _confirmBattleStart()
+                        d=Detect(0,.3)
+                    if d.isBattleFormationRestriction():
                         _resolveFormationRestriction()
                         _confirmBattleStart()
                     break
@@ -731,6 +757,7 @@ class Main:
                     fgoDevice.device.press('J')
                     return logger.info('No Storm Pot')
                 elif Detect.cache.isTurnBegin():break
+                elif _dismissPreBattlePopup(Detect.cache):continue
                 elif Detect.cache.isAddFriend():fgoDevice.device.perform('X',(300,))
                 elif Detect.cache.isSpecialDropSuspended():fgoDevice.device.perform('\x1B',(300,))
                 fgoDevice.device.press('\xBB')
@@ -775,6 +802,8 @@ class Main:
     def chooseFriend(self):
         refresh=False
         while not Detect(0,.3).isChooseFriend():
+            if _dismissPreBattlePopup(Detect.cache):
+                continue
             if Detect.cache.isNoFriend():
                 if refresh:schedule.sleep(10)
                 fgoDevice.device.perform('\xBAK',(500,1000))
@@ -785,6 +814,9 @@ class Main:
         while True:
             timer=time.time()
             while True:
+                if _dismissPreBattlePopup(Detect.cache):
+                    Detect(.3)
+                    continue
                 for i in(i for i,j in friendImg.items()if(lambda pos:pos and(fgoDevice.device.touch(pos),True)[-1])(Detect.cache.findFriend(j))):
                     ClassicTurn.friendInfo=(lambda r:(lambda p:[
                         [[-1 if p[i*4+j]=='X'else int(p[i*4+j],16)for j in range(4)]for i in range(3)],
