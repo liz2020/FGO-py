@@ -97,17 +97,24 @@ class XDetectBase(metaclass=logMeta(logger)):
         XDetectBase._watchServantFriend=[self._asyncValueChange(self.isServantFriend(i)if friend is None else friend[i])for i in range(3)]
     def setupSummonHistory(self):XDetectBase._summonHistory=cv2.threshold(cv2.cvtColor(self._crop((147,157,1105,547)),cv2.COLOR_BGR2GRAY),128,255,cv2.THRESH_BINARY)[1]
     def setupWeeklyMission(self):XDetectBase._weeklyMission=self._crop((603,250,1092,710))
-    def isAddFriend(self):return self._compare(self.tmpl.ADDFRIEND,(161,574,499,656))
+    def isAddFriend(self):return self._compare(self.tmpl.ADDFRIEND,(70,560,430,670))
     def isApEmpty(self):return self._compare(self.tmpl.APEMPTY,(522,582,758,652))
     def isAutoFormationPrompt(self):
         try:text=''.join(self.ocr.ocrArea(self._crop((120,120,1160,690)))).upper()
         except(TypeError,ValueError,IndexError):return False
         return('AUTO'in text and('FORMATION'in text or'PARTY'in text))or('自动'in text and'编队'in text)or('自動'in text and('編隊'in text or'編成'in text))
+    def isBattleFormationRestriction(self):
+        try:text=''.join(self.ocr.ocrArea(self._crop((450,70,850,340)))).upper()
+        except(TypeError,ValueError,IndexError):return False
+        return(
+            ('编成限制'in text or'編成制限'in text or('FORMATION'in text and('RESTRICTION'in text or'RESTRICT'in text)))
+            and('首发'in text or'先発'in text or'START'in text or'成员'in text or'隊員'in text or'MEMBER'in text)
+        )
     def isBattleContinue(self):return self._compare(self.tmpl.BATTLECONTINUE,(704,530,976,618))
     def isBattleDefeated(self):return self._compare(self.tmpl.DEFEATED,(603,100,690,176))
     def isBattleFinished(self):return self._compare(self.tmpl.DROPITEM,(110,30,264,76))
     def isBattleFormation(self):return self._compare(self.tmpl.BATTLEBEGIN,(1070,632,1270,710))
-    def isChooseFriend(self):return any(self._compare(i,(1189,190,1210,243))for i in(self.tmpl.CHOOSEFRIEND,self.tmpl.CHOOSEFRIENDEX))
+    def isChooseFriend(self):return any(self._compare(i,(1180,160,1225,710))for i in(self.tmpl.CHOOSEFRIEND,self.tmpl.CHOOSEFRIENDEX))and not self.isBattleFormation()
     def isCardSealed(self):return[self._compare(self.tmpl.CHARASEALED,(76+257*i,479,225+257*i,533),.3)or any(self._compare(j,(44+257*i,492,68+257*i,528),.14)for j in(self.tmpl.CARDSEALEDARTS,self.tmpl.CARDSEALEDQUICK,self.tmpl.CARDSEALEDBUSTER))for i in range(5)]
     def isFpContinue(self):return self._compare(self.tmpl.FPCONTINUE,(646,639,883,707))
     def isFpSummon(self):return self._compare(self.tmpl.FPSUMMON,(643,20,812,67))
