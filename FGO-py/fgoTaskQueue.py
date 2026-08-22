@@ -342,6 +342,8 @@ class TaskWorker(threading.Thread):
                 logger.info(f"Task {task.id} completed successfully")
             except ScriptStop as e:
                 # Cancelled — stays in active slot for UI to show
+                self.queue._running = False
+                self.queue._has_work.clear()
                 task.status = "cancelled"
                 task.result = {"error": str(e)}
                 task.finished_at = time.time()
@@ -355,6 +357,8 @@ class TaskWorker(threading.Thread):
                 logger.info(f"Task {task.id} cancelled: {e}")
             except Exception as e:
                 # Error — stays in active slot
+                self.queue._running = False
+                self.queue._has_work.clear()
                 task.status = "error"
                 task.result = {"error": repr(e)}
                 task.finished_at = time.time()
