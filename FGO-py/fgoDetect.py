@@ -120,7 +120,16 @@ class XDetectBase(metaclass=logMeta(logger)):
         modalGray=numpy.mean(cv2.cvtColor(modal,cv2.COLOR_BGR2GRAY))
         buttonGray=numpy.mean(cv2.cvtColor(button,cv2.COLOR_BGR2GRAY))
         modalBlue=float(numpy.mean(modal[...,0])-numpy.mean(modal[...,2]))
-        return(842,563)if 90<modalGray<180 and numpy.mean(modalHsv[...,1])>70 and modalBlue>40 and 110<buttonGray<230 and numpy.mean(buttonHsv[...,1])>25 else None
+        return(842,563)if 70<modalGray<180 and numpy.mean(modalHsv[...,1])>70 and modalBlue>40 and 110<buttonGray<230 and numpy.mean(buttonHsv[...,1])>25 else None
+    def locateStorySkipConfirmButton(self):
+        modal=self._crop((360,250,920,410))
+        button=self._crop((690,520,980,610))
+        modalHsv=cv2.cvtColor(modal,cv2.COLOR_BGR2HSV)
+        buttonHsv=cv2.cvtColor(button,cv2.COLOR_BGR2HSV)
+        modalGray=numpy.mean(cv2.cvtColor(modal,cv2.COLOR_BGR2GRAY))
+        buttonGray=numpy.mean(cv2.cvtColor(button,cv2.COLOR_BGR2GRAY))
+        modalBlue=float(numpy.mean(modal[...,0])-numpy.mean(modal[...,2]))
+        return(827,562)if 100<modalGray<190 and numpy.mean(modalHsv[...,1])>70 and modalBlue>50 and 110<buttonGray<230 and numpy.mean(buttonHsv[...,1])>25 else None
     def isBattleContinue(self):return self._compare(self.tmpl.BATTLECONTINUE,(704,530,976,618))
     def isBattleDefeated(self):return self._compare(self.tmpl.DEFEATED,(603,100,690,176))
     def isBattleFinished(self):return self._compare(self.tmpl.DROPITEM,(110,30,264,76))

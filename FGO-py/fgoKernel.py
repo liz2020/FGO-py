@@ -529,7 +529,7 @@ class Battle:
             'material':self.material,
         }
 
-def skipStoryToBattle(timeout_s=180, auto_select_support=True, support_name=''):
+def skipStoryToBattle(timeout_s=180, auto_select_support=True, support_name='', skip_story=True):
     """Advance story/dialog screens before auto battle.
 
     Returns "battle" when battle controls appear, "done" when the flow reaches a
@@ -554,14 +554,20 @@ def skipStoryToBattle(timeout_s=180, auto_select_support=True, support_name=''):
         if d.isBattleFormation():
             _startFormation(d)
             continue
+        if not skip_story:
+            if d.isStorySkip() or d.locateStorySkipConfirmButton():
+                return 'done'
+            continue
         if not logged:
             logger.info('Skipping story/dialog before auto battle')
             logged=True
         _advanceStory(d)
     return 'timeout'
 
-def skipStoryAfterBattle(timeout_s=90):
+def skipStoryAfterBattle(timeout_s=90, skip_story=True):
     """Advance result screens and skip any post-battle story that appears."""
+    if not skip_story:
+        return True
     deadline=time.time()+timeout_s
     logged=False
     while time.time()<deadline:
@@ -577,6 +583,9 @@ def skipStoryAfterBattle(timeout_s=90):
 
 def _advanceStory(d):
     if _dismissPreBattlePopup(d):
+        return
+    if skip:=d.locateStorySkipConfirmButton():
+        fgoDevice.device.touch(skip,700)
         return
     if d.isAutoFormationPrompt():
         _useAutoFormation()
