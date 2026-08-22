@@ -342,6 +342,8 @@ class TaskWorker(threading.Thread):
                 logger.info(f"Task {task.id} completed successfully")
             except ScriptStop as e:
                 # Cancelled — stays in active slot for UI to show
+                self.queue._running = False
+                self.queue._has_work.clear()
                 task.status = "cancelled"
                 task.result = {"error": str(e)}
                 task.finished_at = time.time()
@@ -355,6 +357,8 @@ class TaskWorker(threading.Thread):
                 logger.info(f"Task {task.id} cancelled: {e}")
             except Exception as e:
                 # Error — stays in active slot
+                self.queue._running = False
+                self.queue._has_work.clear()
                 task.status = "error"
                 task.result = {"error": repr(e)}
                 task.finished_at = time.time()
@@ -424,6 +428,40 @@ class TaskWorker(threading.Thread):
                 _report_progress(0, 0, "running", "Battle in progress")
                 fgoKernel.Battle()()
                 return {}
+            case "find_next_chapter":
+                timeout_s = int(task.params.get("timeout_s", 30))
+                steps = int(task.params.get("steps", 2))
+                target_offset_y = int(task.params.get("target_offset_y", 130))
+                settle_ms = int(task.params.get("settle_ms", 1200))
+                logger.info(
+                    f"Finding next chapter: timeout={timeout_s}s, steps={steps}, "
+                    f"target_offset_y={target_offset_y}"
+                )
+                def _on_progress(detail: str):
+                    _report_progress(0, 0, "running", detail)
+                result = fgoKernel.findNextChapter(
+                    timeout_s=timeout_s,
+                    steps=steps,
+                    target_offset_y=target_offset_y,
+                    settle_ms=settle_ms,
+                    on_progress=_on_progress,
+                )
+                _report_progress(1, 1, "done", "Find next chapter complete")
+                return result
+            case "start_auto_battle":
+                timeout_s = int(task.params.get("timeout_s", 180))
+                auto_select_support = bool(task.params.get("auto_select_support", True))
+                support_name = str(task.params.get("support_name", "")).strip()
+                logger.info(
+                    f"Starting queued auto battle: timeout={timeout_s}s, "
+                    f"auto_select_support={auto_select_support}, support_name={support_name!r}"
+                )
+                _report_progress(0, 0, "running", "Auto battle in progress")
+                return _run_auto_battle_sync(
+                    auto_select_support=auto_select_support,
+                    timeout_s=timeout_s,
+                    support_name=support_name,
+                )
             case "wait":
                 minutes = task.params.get("minutes", 1)
                 logger.info(f"Waiting {minutes} minutes")
@@ -587,6 +625,25 @@ def cancel_auto_battle():
         schedule.stop('Auto battle cancelled')
 
 
+def _run_auto_battle_sync(auto_select_support: bool = True, timeout_s: int = 180, support_name: str = ""):
+    fgoKernel.fuse.reset()
+    pre_battle = fgoKernel.skipStoryToBattle(
+        timeout_s=timeout_s,
+        auto_select_support=auto_select_support,
+        support_name=support_name.strip(),
+    )
+    if pre_battle == "timeout":
+        raise TimeoutError(f"Auto battle did not reach a battle screen after skipping story within {timeout_s}s")
+    if pre_battle == "battle":
+        fgoKernel.Battle()()
+        if not fgoKernel.skipStoryAfterBattle():
+            logger.warning("Auto battle did not finish post-battle story cleanup before timeout")
+    else:
+        logger.info("Auto battle completed without a battle screen")
+    logger.info("Auto battle completed")
+    return {"pre_battle": pre_battle}
+
+
 def run_auto_battle(broadcast: Callable, auto_select_support: bool = True, timeout_s: int = 180, support_name: str = ""):
     """Run a one-off Battle() in a new thread. Broadcasts start/finish events."""
     global _auto_battle_active
@@ -600,21 +657,11 @@ def run_auto_battle(broadcast: Callable, auto_select_support: bool = True, timeo
         broadcast({"event": "auto_battle_started", "state": task_queue.get_state()})
         try:
             schedule.reset()
-            fgoKernel.fuse.reset()
-            pre_battle = fgoKernel.skipStoryToBattle(
-                timeout_s=timeout_s,
+            _run_auto_battle_sync(
                 auto_select_support=auto_select_support,
-                support_name=support_name.strip(),
+                timeout_s=timeout_s,
+                support_name=support_name,
             )
-            if pre_battle == "timeout":
-                raise TimeoutError(f"Auto battle did not reach a battle screen after skipping story within {timeout_s}s")
-            if pre_battle == "battle":
-                fgoKernel.Battle()()
-            else:
-                logger.info("Auto battle completed without a battle screen")
-            if pre_battle == "battle" and not fgoKernel.skipStoryAfterBattle():
-                logger.warning("Auto battle did not finish post-battle story cleanup before timeout")
-            logger.info("Auto battle completed")
         except ScriptStop as e:
             logger.info(f"Auto battle cancelled: {e}")
         except Exception:
