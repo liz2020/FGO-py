@@ -110,6 +110,7 @@ class LoopChildRequest(BaseModel):
 
 class AutoBattleRequest(BaseModel):
     auto_select_support: bool = True
+    timeout_s: int = 120
 
 
 # --- REST endpoints ---
@@ -234,7 +235,10 @@ async def auto_battle(req: AutoBattleRequest | None = None):
             loop.call_soon_threadsafe(ws_manager.enqueue, event)
 
     auto_select_support = True if req is None else req.auto_select_support
-    if not run_auto_battle(_broadcast, auto_select_support=auto_select_support):
+    timeout_s = 120 if req is None else req.timeout_s
+    if timeout_s < 1:
+        raise HTTPException(400, "timeout_s must be >= 1")
+    if not run_auto_battle(_broadcast, auto_select_support=auto_select_support, timeout_s=timeout_s):
         raise HTTPException(409, "Cannot start auto battle")
     return {"ok": True}
 
