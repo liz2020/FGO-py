@@ -529,7 +529,7 @@ class Battle:
             'material':self.material,
         }
 
-def skipStoryToBattle(timeout_s=120, auto_select_support=True):
+def skipStoryToBattle(timeout_s=180, auto_select_support=True, support_name=''):
     """Advance story/dialog screens before auto battle.
 
     Returns "battle" when battle controls appear, "done" when the flow reaches a
@@ -547,7 +547,7 @@ def skipStoryToBattle(timeout_s=120, auto_select_support=True):
         if d.isChooseFriend():
             if not auto_select_support:
                 return 'done'
-            _selectTopSupport()
+            _selectSupport(support_name)
             continue
         if d.isMainInterface()or d.isBattleContinue():
             return 'done'
@@ -601,9 +601,68 @@ def _startFormation(d):
     else:
         _confirmBattleStart()
 
+def _selectSupport(support_name=''):
+    support_name=support_name.strip()
+    if support_name:
+        if _selectSupportByName(support_name):
+            return
+        logger.warning('Support OCR text not found after refresh; selecting top support: %s', support_name)
+    _selectTopSupport()
+
 def _selectTopSupport():
     logger.info('Selecting top support before auto battle')
     fgoDevice.device.press('8')
+
+def _normalizeSupportText(text):
+    return re.sub(r'\s+','',text).casefold()
+
+def _supportTextOnScreen(d, support_name):
+    needle=_normalizeSupportText(support_name)
+    rows=(
+        ((150,150,1140,275),(845,203)),
+        ((150,325,1140,450),(845,383)),
+        ((150,500,1140,625),(845,563)),
+    )
+    for rect,pos in rows:
+        try:
+            crop=d._crop(rect)
+            text=d.ocr.ocrText(crop)+'|'.join(d.ocr.ocrArea(crop))
+        except(TypeError,ValueError,IndexError):
+            continue
+        if needle in _normalizeSupportText(text):
+            logger.info('Matched support OCR text: %s', text)
+            return pos
+    return None
+
+def _refreshSupportList():
+    logger.info('Refreshing support list before retrying OCR support search')
+    fgoDevice.device.perform('\xBAK',(500,1000))
+    while not Detect(.2).isChooseFriend():
+        if Detect.cache.isNoFriend():
+            schedule.sleep(10)
+            fgoDevice.device.perform('\xBAK',(500,1000))
+
+def _scanSupportByName(support_name, maxScrolls=20):
+    for _ in range(maxScrolls):
+        d=Detect(0,.3)
+        if pos:=_supportTextOnScreen(d,support_name):
+            fgoDevice.device.touch(pos,700)
+            return True
+        if d.isFriendListEnd():
+            return False
+        fgoDevice.device.swipe((400,600),(400,200))
+        Detect(.4)
+    return False
+
+def _selectSupportByName(support_name):
+    logger.info('Searching support by OCR text: %s', support_name)
+    if _scanSupportByName(support_name):
+        return True
+    _refreshSupportList()
+    if _scanSupportByName(support_name):
+        return True
+    logger.warning('Support OCR text not found after refresh: %s', support_name)
+    return False
 
 def _useAutoFormation():
     logger.info('Using auto formation before auto battle')

@@ -513,9 +513,13 @@
                 <input type="checkbox" id="chkAutoSelectSupport" checked>
                 自动选择助战
             </label>
+            <div class="form-row" style="margin-top:12px">
+                <label for="inputSupportName">助战名</label>
+                <input type="text" id="inputSupportName" placeholder="可选：OCR匹配助战/用户名">
+            </div>
             <div class="form-row" style="margin-top:12px;margin-bottom:0">
                 <label for="inputAutoBattleTimeout">超时(s)</label>
-                <input type="number" id="inputAutoBattleTimeout" value="120" min="1" max="1800">
+                <input type="number" id="inputAutoBattleTimeout" value="180" min="1" max="1800">
             </div>
         </div>
     </div>
@@ -1166,18 +1170,21 @@ function renderAutoBattle() {
     const btn = document.getElementById('btnAutoBattle');
     const settings = document.getElementById('btnAutoBattleSettings');
     const support = document.getElementById('chkAutoSelectSupport');
+    const supportName = document.getElementById('inputSupportName');
     if (autoBattleActive) {
         btn.className = 'btn-auto-battle active';
         btn.textContent = '⚔ Cancel';
         btn.disabled = false;
         settings.disabled = true;
         support.disabled = true;
+        supportName.disabled = true;
     } else {
         btn.className = 'btn-auto-battle';
         btn.textContent = '⚔ Auto Battle';
         btn.disabled = !!(state.active && state.active.status === 'active');
         settings.disabled = btn.disabled;
         support.disabled = btn.disabled;
+        supportName.disabled = btn.disabled;
     }
 }
 
@@ -1205,13 +1212,16 @@ async function startAutoBattle() {
         }
     } else {
         try {
+            const supportName = document.getElementById('inputSupportName').value.trim();
+            const payload = {
+                auto_select_support: document.getElementById('chkAutoSelectSupport').checked,
+                timeout_s: Math.max(1, parseInt(document.getElementById('inputAutoBattleTimeout').value) || 180)
+            };
+            if (supportName) payload.support_name = supportName;
             await fetch(`${API}/api/control/auto-battle`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    auto_select_support: document.getElementById('chkAutoSelectSupport').checked,
-                    timeout_s: Math.max(1, parseInt(document.getElementById('inputAutoBattleTimeout').value) || 120)
-                })
+                body: JSON.stringify(payload)
             });
         } catch (e) {
             console.error('Auto battle error:', e);
