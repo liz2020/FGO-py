@@ -579,13 +579,17 @@ def _advanceStory(d):
     if d.isAutoFormationPrompt():
         _useAutoFormation()
     elif d.isStorySkip():
-        fgoDevice.device.perform('\x08K',(500,700))
+        _skipStory()
     elif d.isAddFriend():
         fgoDevice.device.perform('X',(300,))
     elif d.isSpecialDropSuspended():
         fgoDevice.device.perform('\x1B',(300,))
     else:
         fgoDevice.device.perform(' ',(700,))
+
+def _skipStory():
+    fgoDevice.device.perform('\x08',(900,))
+    fgoDevice.device.touch((827,562),700)
 
 def _startFormation(d):
     if d.isBattleFormationRestriction():
