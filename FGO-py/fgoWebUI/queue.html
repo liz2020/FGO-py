@@ -121,6 +121,17 @@
             background: rgba(78, 204, 163, 0.1);
         }
         .btn-live:disabled { opacity: 0.4; cursor: not-allowed; }
+        .btn-settings {
+            padding: 4px 10px;
+            border-radius: 6px;
+            font-size: 0.8rem;
+            font-weight: 600;
+            cursor: pointer;
+            border: 1px solid var(--text-dim);
+            background: transparent;
+            color: var(--text-dim);
+        }
+        .btn-settings:disabled { opacity: 0.4; cursor: not-allowed; }
         .btn-auto-battle {
             padding: 4px 12px;
             border-radius: 6px;
@@ -137,12 +148,52 @@
             color: #000;
             background: var(--warning);
         }
+        .modal-backdrop {
+            position: fixed;
+            inset: 0;
+            z-index: 20;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            padding: 16px;
+            background: rgba(0, 0, 0, 0.55);
+        }
+        .modal-backdrop.show { display: flex; }
+        .settings-modal {
+            width: min(360px, 100%);
+            background: var(--surface);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            border-radius: var(--radius);
+            box-shadow: 0 12px 32px rgba(0, 0, 0, 0.4);
+            padding: 14px;
+        }
+        .settings-modal .modal-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 12px;
+        }
+        .settings-modal h3 {
+            font-size: 0.95rem;
+            color: var(--text);
+            margin: 0;
+        }
+        .modal-close {
+            background: none;
+            border: none;
+            color: var(--text-dim);
+            cursor: pointer;
+            font-size: 1.2rem;
+            line-height: 1;
+            padding: 4px 8px;
+        }
+        .modal-close:hover { color: var(--text); }
         .support-toggle {
             display: flex;
             align-items: center;
-            gap: 4px;
-            font-size: 0.8rem;
-            color: var(--text-dim);
+            gap: 8px;
+            font-size: 0.9rem;
+            color: var(--text);
             cursor: pointer;
         }
         .support-toggle input[type="checkbox"] {
@@ -447,12 +498,26 @@
         <div class="no-image">Tap to capture screenshot</div>
     </div>
     <div class="screenshot-controls">
+        <button class="btn-settings" id="btnAutoBattleSettings" onclick="openAutoBattleSettings()" title="Auto battle settings">⚙</button>
         <button class="btn-auto-battle" id="btnAutoBattle" onclick="startAutoBattle()">⚔ Auto Battle</button>
-        <label class="support-toggle" title="Auto select the support servant before battle">
-            <input type="checkbox" id="chkAutoSelectSupport" checked>
-            助战
-        </label>
         <button class="btn-live" id="btnLive" onclick="toggleLive()">● Live</button>
+    </div>
+
+    <div class="modal-backdrop" id="autoBattleSettingsModal" onclick="onSettingsBackdropClick(event)">
+        <div class="settings-modal" role="dialog" aria-modal="true" aria-labelledby="autoBattleSettingsTitle">
+            <div class="modal-header">
+                <h3 id="autoBattleSettingsTitle">Auto Battle Settings</h3>
+                <button class="modal-close" onclick="closeAutoBattleSettings()" aria-label="Close">×</button>
+            </div>
+            <label class="support-toggle" title="Auto select the support servant before battle">
+                <input type="checkbox" id="chkAutoSelectSupport" checked>
+                自动选择助战
+            </label>
+            <div class="form-row" style="margin-top:12px;margin-bottom:0">
+                <label for="inputAutoBattleTimeout">超时(s)</label>
+                <input type="number" id="inputAutoBattleTimeout" value="120" min="1" max="1800">
+            </div>
+        </div>
     </div>
 
     <!-- Active Task Box -->
@@ -1099,17 +1164,34 @@ function stopLive() {
 // --- Auto Battle ---
 function renderAutoBattle() {
     const btn = document.getElementById('btnAutoBattle');
+    const settings = document.getElementById('btnAutoBattleSettings');
     const support = document.getElementById('chkAutoSelectSupport');
     if (autoBattleActive) {
         btn.className = 'btn-auto-battle active';
         btn.textContent = '⚔ Cancel';
         btn.disabled = false;
+        settings.disabled = true;
         support.disabled = true;
     } else {
         btn.className = 'btn-auto-battle';
         btn.textContent = '⚔ Auto Battle';
         btn.disabled = !!(state.active && state.active.status === 'active');
+        settings.disabled = btn.disabled;
         support.disabled = btn.disabled;
+    }
+}
+
+function openAutoBattleSettings() {
+    document.getElementById('autoBattleSettingsModal').classList.add('show');
+}
+
+function closeAutoBattleSettings() {
+    document.getElementById('autoBattleSettingsModal').classList.remove('show');
+}
+
+function onSettingsBackdropClick(event) {
+    if (event.target.id === 'autoBattleSettingsModal') {
+        closeAutoBattleSettings();
     }
 }
 
@@ -1127,7 +1209,8 @@ async function startAutoBattle() {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    auto_select_support: document.getElementById('chkAutoSelectSupport').checked
+                    auto_select_support: document.getElementById('chkAutoSelectSupport').checked,
+                    timeout_s: Math.max(1, parseInt(document.getElementById('inputAutoBattleTimeout').value) || 120)
                 })
             });
         } catch (e) {
@@ -1148,6 +1231,12 @@ async function cancelAutoBattleForManualInput() {
         console.error('Cancel auto battle for manual input error:', e);
     }
 }
+
+document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') {
+        closeAutoBattleSettings();
+    }
+});
 
 // --- Expandable items ---
 function toggleExpand(btn, id) {
