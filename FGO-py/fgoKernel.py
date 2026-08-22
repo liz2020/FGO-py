@@ -529,7 +529,7 @@ class Battle:
             'material':self.material,
         }
 
-def skipStoryToBattle(timeout_s=90, auto_select_support=True):
+def skipStoryToBattle(timeout_s=120, auto_select_support=True):
     """Advance story/dialog screens before auto battle.
 
     Returns "battle" when battle controls appear, "done" when the flow reaches a
@@ -588,10 +588,14 @@ def _advanceStory(d):
         fgoDevice.device.perform(' ',(700,))
 
 def _startFormation(d):
-    if d.isAutoFormationPrompt():
+    if d.isBattleFormationRestriction():
+        _resolveFormationRestriction()
+        _confirmBattleStart()
+    elif d.isAutoFormationPrompt():
         _useAutoFormation()
+        _confirmBattleStart()
     else:
-        fgoDevice.device.perform(' ',(1000,))
+        _confirmBattleStart()
 
 def _selectTopSupport():
     logger.info('Selecting top support before auto battle')
@@ -600,6 +604,22 @@ def _selectTopSupport():
 def _useAutoFormation():
     logger.info('Using auto formation before auto battle')
     fgoDevice.device.perform('\xDEL ',(1000,1500,1000))
+
+def _confirmBattleStart():
+    fgoDevice.device.perform(' M ',(2000,2000,10000))
+
+def _fixFormationRestriction():
+    logger.info('Formation restriction detected; closing modal and using auto formation')
+    fgoDevice.device.perform('Z',(500,))
+    _useAutoFormation()
+
+def _resolveFormationRestriction(maxAttempts=3):
+    for _ in range(maxAttempts):
+        _fixFormationRestriction()
+        d=Detect(1,.3)
+        if not d.isBattleFormationRestriction():
+            return
+    raise ScriptStop('Formation restriction could not be resolved with auto formation')
 
 class Main:
     teamIndex=0
@@ -625,9 +645,15 @@ class Main:
                     if Detect(.7,.3).isApEmpty()and not self.eatApple():return logger.info('Ap Empty')
                     self.chooseFriend()
                     while not Detect(0,.3).isBattleFormation():pass
-                    if self.teamIndex and Detect.cache.getTeamIndex()+1!=self.teamIndex:fgoDevice.device.perform('\x70\x71\x72\x73\x74\x75\x76\x77\x78\x79\x7A\x7B\x7C\x7D\x7E'[self.teamIndex-1],(1000,))
-                    if self.autoFormation:fgoDevice.device.perform('\xDEL ',(1000,1500,1000))
-                    fgoDevice.device.perform(' M ',(2000,2000,10000))
+                    if Detect.cache.isBattleFormationRestriction():
+                        _resolveFormationRestriction()
+                    else:
+                        if self.teamIndex and Detect.cache.getTeamIndex()+1!=self.teamIndex:fgoDevice.device.perform('\x70\x71\x72\x73\x74\x75\x76\x77\x78\x79\x7A\x7B\x7C\x7D\x7E'[self.teamIndex-1],(1000,))
+                        if self.autoFormation:fgoDevice.device.perform('\xDEL ',(1000,1500,1000))
+                    _confirmBattleStart()
+                    if Detect(0,.3).isBattleFormationRestriction():
+                        _resolveFormationRestriction()
+                        _confirmBattleStart()
                     break
                 elif Detect.cache.isBattleContinue():
                     if self.battleCount==battleTotal:
