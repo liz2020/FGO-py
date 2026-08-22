@@ -513,6 +513,10 @@
                 <input type="checkbox" id="chkAutoSelectSupport" checked>
                 自动选择助战
             </label>
+            <label class="support-toggle" title="Skip story/dialog screens before and after auto battle">
+                <input type="checkbox" id="chkAutoBattleSkipStory" checked>
+                跳过剧情
+            </label>
             <div class="form-row" style="margin-top:12px">
                 <label for="inputSupportName">助战名</label>
                 <input type="text" id="inputSupportName" placeholder="可选：OCR匹配助战/用户名">
@@ -994,6 +998,7 @@ async function addTaskToQueue() {
         const supportName = document.getElementById('inputSupportName').value.trim();
         params = {
             auto_select_support: document.getElementById('chkAutoSelectSupport').checked,
+            skip_story: document.getElementById('chkAutoBattleSkipStory').checked,
             timeout_s: Math.max(1, parseInt(document.getElementById('inputAutoBattleTimeout').value) || 180),
         };
         if (supportName) params.support_name = supportName;
@@ -1183,6 +1188,7 @@ function renderAutoBattle() {
     const btn = document.getElementById('btnAutoBattle');
     const settings = document.getElementById('btnAutoBattleSettings');
     const support = document.getElementById('chkAutoSelectSupport');
+    const skipStory = document.getElementById('chkAutoBattleSkipStory');
     const supportName = document.getElementById('inputSupportName');
     if (autoBattleActive) {
         btn.className = 'btn-auto-battle active';
@@ -1190,6 +1196,7 @@ function renderAutoBattle() {
         btn.disabled = false;
         settings.disabled = true;
         support.disabled = true;
+        skipStory.disabled = true;
         supportName.disabled = true;
     } else {
         btn.className = 'btn-auto-battle';
@@ -1197,6 +1204,7 @@ function renderAutoBattle() {
         btn.disabled = !!(state.active && state.active.status === 'active');
         settings.disabled = btn.disabled;
         support.disabled = btn.disabled;
+        skipStory.disabled = btn.disabled;
         supportName.disabled = btn.disabled;
     }
 }
@@ -1228,6 +1236,7 @@ async function startAutoBattle() {
             const supportName = document.getElementById('inputSupportName').value.trim();
             const payload = {
                 auto_select_support: document.getElementById('chkAutoSelectSupport').checked,
+                skip_story: document.getElementById('chkAutoBattleSkipStory').checked,
                 timeout_s: Math.max(1, parseInt(document.getElementById('inputAutoBattleTimeout').value) || 180)
             };
             if (supportName) payload.support_name = supportName;
@@ -1294,7 +1303,7 @@ function describeTaskDetails(task) {
     }
     if (task.type === 'battle') return 'One-off battle';
     if (task.type === 'find_next_chapter') return `Follow the 下一个 marker to the chapter, then follow the sidebar 下一个 marker to the battle (timeout ${task.params.timeout_s || 30}s)`;
-    if (task.type === 'start_auto_battle') return `Skip pre-battle story and run auto battle (timeout ${task.params.timeout_s || 180}s)`;
+    if (task.type === 'start_auto_battle') return `${task.params.skip_story === false ? 'Run auto battle without skipping story' : 'Skip story and run auto battle'} (timeout ${task.params.timeout_s || 180}s)`;
     if (task.type === 'wait') return `Wait for ${task.params.minutes || '?'} minutes`;
     if (task.type === 'stop_emulator') return 'Stop the emulator instance';
     if (task.type === 'start_emulator') return 'Start the emulator instance';

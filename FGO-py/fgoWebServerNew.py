@@ -110,6 +110,7 @@ class LoopChildRequest(BaseModel):
 
 class AutoBattleRequest(BaseModel):
     auto_select_support: bool = True
+    skip_story: bool = True
     timeout_s: int = 180
     support_name: str = ""
 
@@ -236,6 +237,7 @@ async def auto_battle(req: AutoBattleRequest | None = None):
             loop.call_soon_threadsafe(ws_manager.enqueue, event)
 
     auto_select_support = True if req is None else req.auto_select_support
+    skip_story = True if req is None else req.skip_story
     timeout_s = 180 if req is None else req.timeout_s
     support_name = "" if req is None else req.support_name.strip()
     if timeout_s < 1:
@@ -243,6 +245,7 @@ async def auto_battle(req: AutoBattleRequest | None = None):
     if not run_auto_battle(
         _broadcast,
         auto_select_support=auto_select_support,
+        skip_story=skip_story,
         timeout_s=timeout_s,
         support_name=support_name,
     ):
