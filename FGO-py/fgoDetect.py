@@ -107,8 +107,10 @@ class XDetectBase(metaclass=logMeta(logger)):
         try:text=''.join(self.ocr.ocrArea(self._crop((450,70,850,340)))).upper()
         except(TypeError,ValueError,IndexError):return False
         return(
-            ('编成限制'in text or'編成制限'in text or('FORMATION'in text and('RESTRICTION'in text or'RESTRICT'in text)))
-            and('首发'in text or'先発'in text or'START'in text or'成员'in text or'隊員'in text or'MEMBER'in text)
+            '编制限制'in text
+            or'编成限制'in text
+            or'編成制限'in text
+            or('FORMATION'in text and('RESTRICTION'in text or'RESTRICT'in text))
         )
     def isBattleContinue(self):return self._compare(self.tmpl.BATTLECONTINUE,(704,530,976,618))
     def isBattleDefeated(self):return self._compare(self.tmpl.DEFEATED,(603,100,690,176))
