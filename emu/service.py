@@ -143,7 +143,7 @@ def create_app() -> FastAPI:
     @app.get("/api/instances/{index}/apps")
     async def list_apps(index: int):
         b = get_backend()
-        apps = b.list_apps(index)
+        apps = await asyncio.to_thread(b.list_apps, index)
         return {"apps": apps}
 
     @app.post("/api/instances/{index}/apps/launch")
@@ -171,12 +171,17 @@ def create_app() -> FastAPI:
     @app.get("/api/instances/{index}/screenshot")
     async def screenshot(index: int):
         b = get_backend()
-        img = b.screenshot(index)
+        img = await asyncio.to_thread(b.screenshot, index)
         if img is None:
             raise HTTPException(status_code=503, detail="Screenshot unavailable")
         # Encode to JPEG for efficiency
         import cv2
-        success, buffer = cv2.imencode(".jpg", img, [cv2.IMWRITE_JPEG_QUALITY, 60])
+        success, buffer = await asyncio.to_thread(
+            cv2.imencode,
+            ".jpg",
+            img,
+            [cv2.IMWRITE_JPEG_QUALITY, 60],
+        )
         if not success:
             raise HTTPException(status_code=500, detail="Failed to encode screenshot")
         return Response(content=buffer.tobytes(), media_type="image/jpeg")

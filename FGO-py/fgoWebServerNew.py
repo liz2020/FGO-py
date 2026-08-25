@@ -338,8 +338,12 @@ async def reconnect_device():
     if not pending:
         raise HTTPException(400, "No device name configured")
     try:
-        fgoDevice.device = fgoDevice.Device(pending)
-        return {"ok": True, "device": fgoDevice.device.name}
+        def _reconnect():
+            with fgoDevice.reconnect_lock:
+                fgoDevice.device = fgoDevice.Device(pending)
+                return fgoDevice.device.name
+        device_name = await asyncio.to_thread(_reconnect)
+        return {"ok": True, "device": device_name}
     except Exception as e:
         raise HTTPException(503, f"Device not available: {e}")
 
@@ -347,11 +351,22 @@ async def reconnect_device():
 @app.post("/api/screenshot")
 async def screenshot():
     if not fgoDevice.device.available:
+        active = task_queue.current
+        if active and active.status == "active" and active.type == "start_emulator":
+            raise HTTPException(503, "Device reconnect in progress")
         # Try to reconnect automatically if we know the device name
         pending = getattr(fgoDevice, '_pending_device_name', None)
         if pending:
             try:
-                fgoDevice.device = fgoDevice.Device(pending)
+                def _reconnect():
+                    if not fgoDevice.reconnect_lock.acquire(blocking=False):
+                        return False
+                    try:
+                        fgoDevice.device = fgoDevice.Device(pending)
+                        return True
+                    finally:
+                        fgoDevice.reconnect_lock.release()
+                await asyncio.to_thread(_reconnect)
             except Exception:
                 pass
         if not fgoDevice.device.available:

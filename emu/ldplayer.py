@@ -162,8 +162,12 @@ class LDConsole:
 
     def list_apps(self, index: int) -> list[str]:
         """List installed packages on an instance."""
-        output = self._run("listpackages", "--index", str(index))
-        return [line.strip() for line in output.strip().splitlines() if line.strip()]
+        output = self._run("adb", "--index", str(index), "--command", "shell pm list packages")
+        return [
+            line.removeprefix("package:").strip()
+            for line in output.strip().splitlines()
+            if line.startswith("package:")
+        ]
 
     def launch_app(self, index: int, package_name: str) -> bool:
         """Launch an app on an instance."""

@@ -1,3 +1,5 @@
+import threading
+
 from fgoAndroid import Android
 from fgoDetect import setup
 from fgoLogging import getLogger
@@ -6,6 +8,7 @@ logger=getLogger('Device')
 
 helpers={}
 _pending_device_name = None
+reconnect_lock = threading.Lock()
 
 
 def parseLDPlayerIndex(name):
@@ -87,6 +90,7 @@ class LDPlayerDevice:
         self._width = item.get("width", 1280)
         self._height = item.get("height", 720)
         self._pid = item.get("pid", 0) or 0
+        self._bind_window_handle = item.get("bind_window_handle", 0) or 0
         self._console = console
         self._opengl = LDOpenGL(
             console.install_dir, index,
@@ -96,7 +100,7 @@ class LDPlayerDevice:
         # Detect running FGO package
         self.package = self._detect_fgo_package()
         # Find the RenderWindow HWND for Win32 input
-        self._render_hwnd = self._find_render_hwnd()
+        self._render_hwnd = self._validated_bind_hwnd() or self._find_render_hwnd()
         if not self._render_hwnd:
             raise RuntimeError(f"Could not find RenderWindow for LDPlayer instance {index}")
         # Get render window client size for coordinate scaling
@@ -108,6 +112,15 @@ class LDPlayerDevice:
         # Scale: game coords (1280x720) → render window client area
         self._scale_x = self._render_w / 1280.0
         self._scale_y = self._render_h / 720.0
+
+    def _validated_bind_hwnd(self):
+        """Use LDPlayer's bind_window_handle when it is already a valid window."""
+        if not self._bind_window_handle:
+            return None
+        import ctypes
+        user32 = ctypes.windll.user32
+        hwnd = int(self._bind_window_handle)
+        return hwnd if user32.IsWindow(hwnd) else None
 
     def _find_render_hwnd(self):
         """Find the RenderWindow child HWND belonging to this LDPlayer instance."""
