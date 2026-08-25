@@ -112,6 +112,7 @@ class AutoBattleRequest(BaseModel):
     auto_select_support: bool = True
     skip_story: bool = True
     timeout_s: int = 180
+    idle_action_delay_s: float = 0.5
     support_name: str = ""
 
 
@@ -239,14 +240,18 @@ async def auto_battle(req: AutoBattleRequest | None = None):
     auto_select_support = True if req is None else req.auto_select_support
     skip_story = True if req is None else req.skip_story
     timeout_s = 180 if req is None else req.timeout_s
+    idle_action_delay_s = 0.5 if req is None else req.idle_action_delay_s
     support_name = "" if req is None else req.support_name.strip()
     if timeout_s < 1:
         raise HTTPException(400, "timeout_s must be >= 1")
+    if idle_action_delay_s < 0:
+        raise HTTPException(400, "idle_action_delay_s must be >= 0")
     if not run_auto_battle(
         _broadcast,
         auto_select_support=auto_select_support,
         skip_story=skip_story,
         timeout_s=timeout_s,
+        idle_action_delay_s=idle_action_delay_s,
         support_name=support_name,
     ):
         raise HTTPException(409, "Cannot start auto battle")

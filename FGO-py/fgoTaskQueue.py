@@ -453,17 +453,21 @@ class TaskWorker(threading.Thread):
                 timeout_s = int(task.params.get("timeout_s", 180))
                 auto_select_support = bool(task.params.get("auto_select_support", True))
                 skip_story = bool(task.params.get("skip_story", True))
+                idle_action_delay_s = _parse_idle_action_delay(
+                    task.params.get("idle_action_delay_s", 0.5)
+                )
                 support_name = str(task.params.get("support_name", "")).strip()
                 logger.info(
                     f"Starting queued auto battle: timeout={timeout_s}s, "
                     f"auto_select_support={auto_select_support}, skip_story={skip_story}, "
-                    f"support_name={support_name!r}"
+                    f"idle_action_delay_s={idle_action_delay_s}, support_name={support_name!r}"
                 )
                 _report_progress(0, 0, "running", "Auto battle in progress")
                 return _run_auto_battle_sync(
                     auto_select_support=auto_select_support,
                     skip_story=skip_story,
                     timeout_s=timeout_s,
+                    idle_action_delay_s=idle_action_delay_s,
                     support_name=support_name,
                 )
             case "wait":
@@ -692,7 +696,23 @@ def cancel_auto_battle():
         schedule.stop('Auto battle cancelled')
 
 
-def _run_auto_battle_sync(auto_select_support: bool = True, skip_story: bool = True, timeout_s: int = 180, support_name: str = ""):
+def _parse_idle_action_delay(value) -> float:
+    try:
+        delay = float(value)
+    except (TypeError, ValueError):
+        raise ValueError("idle_action_delay_s must be a number")
+    if delay < 0:
+        raise ValueError("idle_action_delay_s must be >= 0")
+    return delay
+
+
+def _run_auto_battle_sync(
+    auto_select_support: bool = True,
+    skip_story: bool = True,
+    timeout_s: int = 180,
+    idle_action_delay_s: float = 0.5,
+    support_name: str = "",
+):
     fgoKernel.fuse.reset()
     pre_battle = fgoKernel.skipStoryToBattle(
         timeout_s=timeout_s,
@@ -704,7 +724,7 @@ def _run_auto_battle_sync(auto_select_support: bool = True, skip_story: bool = T
         action = "skipping story" if skip_story else "waiting"
         raise TimeoutError(f"Auto battle did not reach a battle screen after {action} within {timeout_s}s")
     if pre_battle == "battle":
-        fgoKernel.Battle()()
+        fgoKernel.Battle(idleActionDelay=idle_action_delay_s)()
         if not fgoKernel.skipStoryAfterBattle(skip_story=skip_story):
             logger.warning("Auto battle did not finish post-battle story cleanup before timeout")
     else:
@@ -713,7 +733,14 @@ def _run_auto_battle_sync(auto_select_support: bool = True, skip_story: bool = T
     return {"pre_battle": pre_battle}
 
 
-def run_auto_battle(broadcast: Callable, auto_select_support: bool = True, skip_story: bool = True, timeout_s: int = 180, support_name: str = ""):
+def run_auto_battle(
+    broadcast: Callable,
+    auto_select_support: bool = True,
+    skip_story: bool = True,
+    timeout_s: int = 180,
+    idle_action_delay_s: float = 0.5,
+    support_name: str = "",
+):
     """Run a one-off Battle() in a new thread. Broadcasts start/finish events."""
     global _auto_battle_active
     with _auto_battle_lock:
@@ -730,6 +757,7 @@ def run_auto_battle(broadcast: Callable, auto_select_support: bool = True, skip_
                 auto_select_support=auto_select_support,
                 skip_story=skip_story,
                 timeout_s=timeout_s,
+                idle_action_delay_s=idle_action_delay_s,
                 support_name=support_name,
             )
         except ScriptStop as e:
