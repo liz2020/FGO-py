@@ -8,6 +8,7 @@ Design:
 - Done tasks disappear; cancelled tasks stay in a separate list
 """
 import json
+import queue
 import threading
 import time
 import urllib.request
@@ -582,19 +583,64 @@ class TaskWorker(threading.Thread):
         if not pending:
             raise RuntimeError("No device name configured for reconnection")
         deadline = time.time() + timeout
-        # Phase 1: reconnect device
+        instance_index = _manager_instance_index()
+        # Phase 1: wait until the manager can capture a frame.  Creating
+        # LDPlayerDevice too early can block inside LDPlayer's window/capture
+        # APIs while the emulator process is only partially initialized.
         while time.time() < deadline:
-            time.sleep(5)
-            _report_progress(0, 0, "running", "Waiting for emulator...")
+            _report_progress(0, 0, "running", "Waiting for screen...")
             try:
-                fgoDevice.device = fgoDevice.Device(pending)
+                req = urllib.request.Request(
+                    f"{_emu_manager_url}/api/instances/{instance_index}/screenshot",
+                    method="GET",
+                )
+                with urllib.request.urlopen(req, timeout=5) as resp:
+                    if resp.status == 200:
+                        logger.info("Emulator screen available via manager")
+                        break
+            except Exception:
+                pass
+            schedule.sleep(3)
+        else:
+            raise RuntimeError(f"Screenshot not available after {timeout}s")
+
+        # Phase 2: wait until Android package queries are responsive.  LDPlayer
+        # can produce screenshots before its Android/ADB side is ready.
+        while time.time() < deadline:
+            _report_progress(0, 0, "running", "Waiting for Android...")
+            try:
+                req = urllib.request.Request(
+                    f"{_emu_manager_url}/api/instances/{instance_index}/apps",
+                    method="GET",
+                )
+                with urllib.request.urlopen(req, timeout=5) as resp:
+                    data = json.loads(resp.read().decode("utf-8"))
+                    if resp.status == 200 and data.get("apps"):
+                        logger.info("Android package list available")
+                        break
+            except Exception:
+                pass
+            schedule.sleep(3)
+        else:
+            raise RuntimeError(f"Android not ready after {timeout}s")
+
+        # Phase 3: reconnect device
+        while time.time() < deadline:
+            _report_progress(0, 0, "running", "Reconnecting device...")
+            try:
+                reconnect_timeout = max(1, min(60, int(deadline - time.time())))
+                device = self._create_device_with_timeout(pending, reconnect_timeout)
+                with fgoDevice.reconnect_lock:
+                    fgoDevice.device = device
                 logger.info("Device reconnected: %s", fgoDevice.device.name)
                 break
-            except Exception:
-                continue
+            except Exception as e:
+                logger.warning("Device reconnect failed: %s", e)
+                schedule.sleep(3)
         else:
             raise RuntimeError(f"Device not ready after {timeout}s")
-        # Phase 2: wait until screenshot succeeds
+
+        # Phase 4: verify the automation device can capture screenshots
         while time.time() < deadline:
             _report_progress(0, 0, "running", "Waiting for screen...")
             try:
@@ -604,8 +650,26 @@ class TaskWorker(threading.Thread):
                     return
             except Exception:
                 pass
-            time.sleep(3)
+            schedule.sleep(3)
         raise RuntimeError(f"Screenshot not available after {timeout}s")
+
+    def _create_device_with_timeout(self, name: str, timeout: int):
+        result = queue.Queue(maxsize=1)
+
+        def _connect():
+            try:
+                result.put((True, fgoDevice.Device(name)))
+            except BaseException as e:
+                result.put((False, e))
+
+        threading.Thread(target=_connect, daemon=True, name="DeviceReconnect").start()
+        try:
+            ok, value = result.get(timeout=timeout)
+        except queue.Empty:
+            raise TimeoutError(f"Device reconnect timed out after {timeout}s")
+        if ok:
+            return value
+        raise value
 
 
 # Module-level singleton
