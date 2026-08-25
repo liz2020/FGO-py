@@ -8,6 +8,7 @@ Design:
 - Done tasks disappear; cancelled tasks stay in a separate list
 """
 import json
+import queue
 import threading
 import time
 import urllib.request
@@ -627,11 +628,14 @@ class TaskWorker(threading.Thread):
         while time.time() < deadline:
             _report_progress(0, 0, "running", "Reconnecting device...")
             try:
+                reconnect_timeout = max(1, min(60, int(deadline - time.time())))
+                device = self._create_device_with_timeout(pending, reconnect_timeout)
                 with fgoDevice.reconnect_lock:
-                    fgoDevice.device = fgoDevice.Device(pending)
+                    fgoDevice.device = device
                 logger.info("Device reconnected: %s", fgoDevice.device.name)
                 break
-            except Exception:
+            except Exception as e:
+                logger.warning("Device reconnect failed: %s", e)
                 schedule.sleep(3)
         else:
             raise RuntimeError(f"Device not ready after {timeout}s")
@@ -648,6 +652,24 @@ class TaskWorker(threading.Thread):
                 pass
             schedule.sleep(3)
         raise RuntimeError(f"Screenshot not available after {timeout}s")
+
+    def _create_device_with_timeout(self, name: str, timeout: int):
+        result = queue.Queue(maxsize=1)
+
+        def _connect():
+            try:
+                result.put((True, fgoDevice.Device(name)))
+            except BaseException as e:
+                result.put((False, e))
+
+        threading.Thread(target=_connect, daemon=True, name="DeviceReconnect").start()
+        try:
+            ok, value = result.get(timeout=timeout)
+        except queue.Empty:
+            raise TimeoutError(f"Device reconnect timed out after {timeout}s")
+        if ok:
+            return value
+        raise value
 
 
 # Module-level singleton

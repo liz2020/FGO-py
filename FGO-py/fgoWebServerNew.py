@@ -334,6 +334,9 @@ async def get_quests(lang: str = "zh"):
 @app.post("/api/reconnect")
 async def reconnect_device():
     """Try to reconnect to the device (e.g., after emulator starts)."""
+    active = task_queue.current
+    if active and active.status == "active" and active.type == "start_emulator":
+        raise HTTPException(503, "Device reconnect in progress")
     pending = getattr(fgoDevice, '_pending_device_name', None)
     if not pending:
         raise HTTPException(400, "No device name configured")
