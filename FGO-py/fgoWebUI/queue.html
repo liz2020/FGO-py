@@ -287,6 +287,34 @@
             margin-bottom: 10px;
             color: var(--text-dim);
         }
+        .section-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 8px;
+            margin-bottom: 10px;
+        }
+        .section-header h3 {
+            margin-bottom: 0;
+        }
+        .queue-lock-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            padding: 4px 8px;
+            border-radius: 6px;
+            border: 1px solid rgba(160, 160, 176, 0.35);
+            background: transparent;
+            color: var(--text-dim);
+            cursor: pointer;
+            font-size: 0.8rem;
+            font-weight: 600;
+        }
+        .queue-lock-btn.locked {
+            border-color: var(--warning);
+            color: var(--warning);
+            background: rgba(240, 165, 0, 0.1);
+        }
 
         /* Queue List */
         .queue-list { list-style: none; }
@@ -298,6 +326,16 @@
             font-size: 0.85rem;
         }
         .queue-item { cursor: grab; touch-action: none; }
+        .queue-list.locked .queue-item {
+            cursor: default;
+            touch-action: auto;
+        }
+        .queue-lock-hint {
+            color: var(--warning);
+            font-size: 0.75rem;
+            margin-bottom: 8px;
+            opacity: 0.9;
+        }
         .gu-mirror {
             opacity: 0.85;
             box-shadow: 0 4px 12px rgba(0,0,0,0.3);
@@ -347,6 +385,10 @@
             font-size: 0.9rem;
             cursor: pointer;
             padding: 4px 8px;
+        }
+        .queue-item .remove-btn:disabled {
+            opacity: 0.35;
+            cursor: not-allowed;
         }
         .queue-item .item-details {
             display: none;
@@ -539,7 +581,11 @@
 
     <!-- Pending Queue -->
     <div class="section">
-        <h3>Queue</h3>
+        <div class="section-header">
+            <h3>Queue</h3>
+            <button class="queue-lock-btn" id="btnQueueLock" onclick="toggleQueueLock()" aria-pressed="false" title="Lock queue reordering">🔓 Unlocked</button>
+        </div>
+        <div class="queue-lock-hint" id="queueLockHint" style="display:none">Queue is locked. Tasks will still run, but drag reordering is disabled.</div>
         <ul class="queue-list" id="queueList">
             <li class="queue-empty">No tasks in queue</li>
         </ul>
@@ -638,6 +684,7 @@ let autoBattleActive = false;
 let pointerState = null;
 let expandedIds = new Set(['active']);  // active task expanded by default
 let activeProgress = null;  // {current, total, detail}
+let queueLocked = localStorage.getItem('fgoQueueLocked') === 'true';
 
 // Back link visibility
 (function() {
@@ -741,6 +788,7 @@ function handleEvent(msg) {
 function render() {
     renderActive();
     renderPending();
+    renderQueueLock();
     renderButton();
     renderAutoBattle();
 }
@@ -804,7 +852,9 @@ function renderProgressBar(progress, cancelled) {
 
 function renderPending() {
     const el = document.getElementById('queueList');
+    el.classList.toggle('locked', queueLocked);
     if (!state.pending || !state.pending.length) {
+        if (_drake) { _drake.destroy(); _drake = null; }
         el.innerHTML = '<li class="queue-empty">No tasks in queue</li>';
         return;
     }
@@ -818,13 +868,36 @@ function renderPending() {
         return `<li class="queue-item" data-id="${task.id}" data-idx="${idx}">
             <div class="item-header">
                 <span class="info">${desc}</span>
-                <button class="remove-btn" onclick="removeFromQueue('${task.id}')">Delete</button>
+                <button class="remove-btn" onclick="removeFromQueue('${task.id}')" ${queueLocked ? 'disabled title="Unlock queue to delete tasks"' : ''}>Delete</button>
                 <button class="expand-btn${expanded ? ' expanded' : ''}" onclick="toggleExpand(this, '${task.id}')">${expanded ? '▾ Details' : '▸ Details'}</button>
             </div>
             <div class="item-details${expanded ? ' show' : ''}">${details}</div>
         </li>`;
     }).join('');
-    setupDragAndDrop();
+    if (queueLocked) {
+        if (_drake) { _drake.destroy(); _drake = null; }
+    } else {
+        setupDragAndDrop();
+    }
+}
+
+function renderQueueLock() {
+    const btn = document.getElementById('btnQueueLock');
+    const hint = document.getElementById('queueLockHint');
+    const list = document.getElementById('queueList');
+    if (!btn || !hint || !list) return;
+    btn.classList.toggle('locked', queueLocked);
+    btn.setAttribute('aria-pressed', queueLocked ? 'true' : 'false');
+    btn.title = queueLocked ? 'Unlock queue reordering' : 'Lock queue reordering';
+    btn.textContent = queueLocked ? '🔒 Locked' : '🔓 Unlocked';
+    hint.style.display = queueLocked ? '' : 'none';
+    list.classList.toggle('locked', queueLocked);
+}
+
+function toggleQueueLock() {
+    queueLocked = !queueLocked;
+    localStorage.setItem('fgoQueueLocked', queueLocked ? 'true' : 'false');
+    render();
 }
 
 function renderLoopItem(task, idx) {
@@ -840,7 +913,7 @@ function renderLoopItem(task, idx) {
         return `<div class="loop-child-item queue-item" data-id="${c.id}" data-child-id="${c.id}">
             <div class="item-header">
                 <span class="info">• ${childDesc}</span>
-                <button class="remove-btn" onclick="removeChildFromLoop('${task.id}', '${c.id}')">Delete</button>
+                <button class="remove-btn" onclick="removeChildFromLoop('${task.id}', '${c.id}')" ${queueLocked ? 'disabled title="Unlock queue to delete tasks"' : ''}>Delete</button>
                 <button class="expand-btn${childExpanded ? ' expanded' : ''}" onclick="toggleExpand(this, '${c.id}')">${childExpanded ? '▾ Details' : '▸ Details'}</button>
             </div>
             <div class="item-details${childExpanded ? ' show' : ''}">${childDetails}</div>
@@ -849,7 +922,7 @@ function renderLoopItem(task, idx) {
     return `<li class="queue-item" data-id="${task.id}" data-idx="${idx}">
         <div class="item-header">
             <span class="info">${title}</span>
-            <button class="remove-btn" onclick="removeFromQueue('${task.id}')">Delete</button>
+            <button class="remove-btn" onclick="removeFromQueue('${task.id}')" ${queueLocked ? 'disabled title="Unlock queue to delete tasks"' : ''}>Delete</button>
             <span class="loop-controls${dimmed}">
                 <button onclick="adjustLoop('${task.id}', -1)" ${infinite || remaining <= 1 ? 'disabled' : ''}>−</button>
                 <span class="loop-count">${remaining}</span>
@@ -1045,6 +1118,7 @@ async function addTaskToQueue() {
 }
 
 async function removeFromQueue(taskId) {
+    if (queueLocked) return;
     await fetch(`${API}/api/queue/${taskId}`, { method: 'DELETE' });
     await fetchState();
 }
@@ -1084,6 +1158,7 @@ async function addChildToLoop(loopId, taskId) {
 }
 
 async function removeChildFromLoop(loopId, childId) {
+    if (queueLocked) return;
     try {
         await fetch(`${API}/api/queue/${loopId}/remove-child`, {
             method: 'POST',
@@ -1323,6 +1398,7 @@ let _drake = null;
 
 function setupDragAndDrop() {
     if (_drake) { _drake.destroy(); _drake = null; }
+    if (queueLocked) return;
 
     const list = document.getElementById('queueList');
     const loopZones = Array.from(list.querySelectorAll('.loop-drop-zone'));
