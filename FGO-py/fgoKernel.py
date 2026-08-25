@@ -490,10 +490,11 @@ class Turn:
         while not Detect().isTurnBegin():pass
         Detect(.5)
 class Battle:
-    def __init__(self,turnClass=Turn):
+    def __init__(self,turnClass=Turn,idleActionDelay=0.5):
         self.turn=0
         self.turnProc=turnClass()
         self.rainbowBox=False
+        self.idleActionDelay=max(0,idleActionDelay)
     def __call__(self):
         self.start=time.time()
         self.material={}
@@ -520,6 +521,7 @@ class Battle:
                 schedule.checkDefeated()
                 return False
             fgoDevice.device.perform('\xBB\x08',(100,100))
+            if self.idleActionDelay:schedule.sleep(self.idleActionDelay)
     @property
     def result(self):
         return{
@@ -528,6 +530,14 @@ class Battle:
             'time':time.time()-self.start,
             'material':self.material,
         }
+
+def _advanceBattleResult(max_steps=10):
+    for _ in range(max_steps):
+        d=Detect(0,.3)
+        if d.isBattleContinue()or d.isMainInterface()or d.isBattleFormation()or d.isChooseFriend()or d.isTurnBegin():
+            return
+        fgoDevice.device.press(' ')
+        schedule.sleep(.4)
 
 def skipStoryToBattle(timeout_s=180, auto_select_support=True, support_name='', skip_story=True):
     """Advance story/dialog screens before auto battle.
@@ -815,7 +825,7 @@ class Main:
                 self.battleTurn+=battleResult['turn']
                 self.battleTime+=battleResult['time']
                 self.material={i:self.material.get(i,0)+battleResult['material'].get(i,0)for i in self.material|battleResult['material']}
-                fgoDevice.device.perform(' '*10,(400,)*10)
+                _advanceBattleResult()
             else:
                 self.defeated+=1
                 fgoDevice.device.perform('CIK',(500,500,500))
