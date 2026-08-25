@@ -453,7 +453,9 @@ class TaskWorker(threading.Thread):
                 timeout_s = int(task.params.get("timeout_s", 180))
                 auto_select_support = bool(task.params.get("auto_select_support", True))
                 skip_story = bool(task.params.get("skip_story", True))
-                idle_action_delay_s = float(task.params.get("idle_action_delay_s", 0.5))
+                idle_action_delay_s = _parse_idle_action_delay(
+                    task.params.get("idle_action_delay_s", 0.5)
+                )
                 support_name = str(task.params.get("support_name", "")).strip()
                 logger.info(
                     f"Starting queued auto battle: timeout={timeout_s}s, "
@@ -692,6 +694,16 @@ def cancel_auto_battle():
     """Cancel a running auto-battle by triggering schedule.stop()."""
     if _auto_battle_active:
         schedule.stop('Auto battle cancelled')
+
+
+def _parse_idle_action_delay(value) -> float:
+    try:
+        delay = float(value)
+    except (TypeError, ValueError):
+        raise ValueError("idle_action_delay_s must be a number")
+    if delay < 0:
+        raise ValueError("idle_action_delay_s must be >= 0")
+    return delay
 
 
 def _run_auto_battle_sync(
