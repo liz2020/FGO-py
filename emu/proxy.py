@@ -7,6 +7,7 @@ This allows all access through a single externally-exposed port (15100).
 from __future__ import annotations
 
 import asyncio
+import html
 import logging
 
 import httpx
@@ -16,6 +17,74 @@ from fastapi.responses import HTMLResponse, Response
 from emu.registry import ScriptRegistry
 
 logger = logging.getLogger(__name__)
+
+
+def _error_page(title: str, message: str, status_code: int) -> HTMLResponse:
+    """Render a proxy error page with an explicit retry action."""
+    safe_title = html.escape(title)
+    safe_message = html.escape(message)
+    return HTMLResponse(
+        f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{safe_title}</title>
+    <style>
+        body {{
+            background: #1a1a2e;
+            color: #eaeaea;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            margin: 0;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 24px;
+        }}
+        main {{
+            background: #0f3460;
+            border-radius: 12px;
+            max-width: 520px;
+            padding: 28px;
+            text-align: center;
+        }}
+        h2 {{ margin: 0 0 12px; }}
+        p {{ color: #c8c8d0; line-height: 1.5; }}
+        .actions {{
+            display: flex;
+            gap: 12px;
+            justify-content: center;
+            margin-top: 24px;
+            flex-wrap: wrap;
+        }}
+        button, a {{
+            border: 0;
+            border-radius: 8px;
+            cursor: pointer;
+            display: inline-block;
+            font-size: 0.95rem;
+            font-weight: 600;
+            padding: 12px 18px;
+            text-decoration: none;
+        }}
+        button {{ background: #4ecca3; color: #1a1a2e; }}
+        a {{ background: #16213e; color: #eaeaea; }}
+    </style>
+</head>
+<body>
+    <main>
+        <h2>{safe_title}</h2>
+        <p>{safe_message}</p>
+        <div class="actions">
+            <button type="button" onclick="window.location.reload()">Refresh</button>
+            <a href="/">Back to dashboard</a>
+        </div>
+    </main>
+</body>
+</html>""",
+        status_code=status_code,
+    )
 
 
 def setup_proxy_routes(app: FastAPI, registry: ScriptRegistry) -> None:
@@ -60,10 +129,9 @@ def setup_proxy_routes(app: FastAPI, registry: ScriptRegistry) -> None:
         """Proxy requests to automation script's internal web server."""
         running = registry.get_running(script_name, index)
         if not running:
-            return HTMLResponse(
-                "<html><body><h2>Script not running</h2>"
-                f"<p>{script_name} is not running for instance {index}.</p>"
-                "<p><a href='/'>← Back to dashboard</a></p></body></html>",
+            return _error_page(
+                "Script not running",
+                f"{script_name} is not running for instance {index}.",
                 status_code=503,
             )
 
@@ -105,17 +173,16 @@ def setup_proxy_routes(app: FastAPI, registry: ScriptRegistry) -> None:
                     media_type=resp.headers.get("content-type"),
                 )
         except httpx.ConnectError:
-            return HTMLResponse(
-                "<html><body><h2>Connection failed</h2>"
-                f"<p>Cannot reach {script_name} on port {proc.port}. "
-                "The script may still be starting up.</p>"
-                "<p><a href='/'>← Back to dashboard</a></p></body></html>",
+            return _error_page(
+                "Connection failed",
+                f"Cannot reach {script_name} on port {proc.port}. "
+                "The script may still be starting up.",
                 status_code=502,
             )
         except httpx.TimeoutException:
-            return HTMLResponse(
-                "<html><body><h2>Timeout</h2>"
-                f"<p>Request to {script_name} timed out.</p></body></html>",
+            return _error_page(
+                "Timeout",
+                f"Request to {script_name} timed out.",
                 status_code=504,
             )
 
