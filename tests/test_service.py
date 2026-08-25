@@ -8,6 +8,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from emu.models import EmulatorInfo, EmulatorInstance, InstanceStatus
+from emu.proxy import _error_page
 from emu.service import create_app, backend, registry
 
 
@@ -135,3 +136,13 @@ def test_shutdown_stops_scripts_without_stopping_emulator():
 
         stop_script.assert_called_once_with("fgo", 0)
         mock_backend.stop.assert_not_called()
+
+
+def test_proxy_error_page_has_refresh_button():
+    resp = _error_page("Connection failed", "The script may still be starting up.", 502)
+    body = resp.body.decode()
+
+    assert resp.status_code == 502
+    assert "Refresh" in body
+    assert "window.location.reload()" in body
+    assert "Back to dashboard" in body
