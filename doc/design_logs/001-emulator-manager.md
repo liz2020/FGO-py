@@ -16,6 +16,16 @@ Emulator management tasks — checking status, launching/restarting instances, o
 
 ## Architecture: Separation of Concerns
 
+The manager discovers every LDPlayer 4, 9, and 14 installation from both Windows
+registry views and common installation directories. Instance cards show the
+installation path and its native index. REST/WebSocket indices are unique
+manager-local IDs, stable while the manager is running; use the IDs returned by
+`/api/instances`, not native indices, for controls and script/progress endpoints.
+Standalone `ldplayer:N` connections still use the preferred installation.
+Manager-started scripts receive `FGO_LDPLAYER_INSTALL_DIR` and
+`FGO_LDPLAYER_LOCAL_INDEX` so device input and screenshots use the selected
+installation while progress, ports, and lifecycle controls use the manager ID.
+
 ```
 ┌─────────────────────────────────────────────────────────┐
 │                      User Devices                       │

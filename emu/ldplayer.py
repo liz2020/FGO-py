@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import logging
 import subprocess
+import threading
+from dataclasses import replace
 from pathlib import Path
 
 import numpy as np
@@ -16,40 +18,49 @@ logger = logging.getLogger(__name__)
 # Registry paths where LDPlayer stores its install location
 _REGISTRY_PATHS = [
     (r"SOFTWARE\leidian\LDPlayer",),
+    (r"SOFTWARE\leidian\LDPlayer14",),
     (r"SOFTWARE\leidian\LDPlayer9",),
     (r"SOFTWARE\leidian\LDPlayer4",),
 ]
 
 
-def _detect_install_dir() -> Path | None:
-    """Detect LDPlayer install directory from Windows registry."""
+def _detect_install_dirs() -> list[Path]:
+    """Find all installations, deduplicating registry and filesystem results."""
+    installs: list[Path] = []
+
+    def add(value: str | Path) -> None:
+        path = Path(value)
+        if (path / "ldconsole.exe").is_file() and path.resolve() not in installs:
+            installs.append(path.resolve())
+
     try:
         import winreg
     except ImportError:
-        return None
+        winreg = None
 
-    for (key_path,) in _REGISTRY_PATHS:
-        for hive in (winreg.HKEY_CURRENT_USER, winreg.HKEY_LOCAL_MACHINE):
-            try:
-                with winreg.OpenKey(hive, key_path) as key:
-                    value, _ = winreg.QueryValueEx(key, "InstallDir")
-                    p = Path(value)
-                    if p.exists() and (p / "ldconsole.exe").exists():
-                        return p
-            except (OSError, FileNotFoundError):
-                continue
+    if winreg is not None:
+        for (key_path,) in _REGISTRY_PATHS:
+            for hive in (winreg.HKEY_CURRENT_USER, winreg.HKEY_LOCAL_MACHINE):
+                for view in (0, winreg.KEY_WOW64_64KEY, winreg.KEY_WOW64_32KEY):
+                    try:
+                        with winreg.OpenKey(hive, key_path, 0, winreg.KEY_READ | view) as key:
+                            value, _ = winreg.QueryValueEx(key, "InstallDir")
+                            add(value)
+                    except OSError:
+                        continue
 
     # Fallback: check common install locations
-    for candidate in [
-        Path(r"C:\leidian\LDPlayer14"),
-        Path(r"C:\leidian\LDPlayer9"),
-        Path(r"C:\Program Files\leidian\LDPlayer14"),
-        Path(r"C:\Program Files\leidian\LDPlayer9"),
-    ]:
-        if candidate.exists() and (candidate / "ldconsole.exe").exists():
-            return candidate
+    for root in (Path(r"C:\leidian"), Path(r"C:\Program Files\leidian"),
+                 Path(r"C:\Program Files (x86)\leidian")):
+        for version in ("14", "9", "4"):
+            add(root / f"LDPlayer{version}")
+    return installs
 
-    return None
+
+def _detect_install_dir() -> Path | None:
+    """Return the preferred installation for standalone device connections."""
+    installs = _detect_install_dirs()
+    return installs[0] if installs else None
 
 
 class LDConsole:
@@ -240,39 +251,42 @@ class LDPlayerBackend(EmulatorBackend):
                 return inst
         return None
 
+    def resolve_instance(self, index: int) -> tuple[LDConsole | None, int]:
+        return self._ensure_console(), index
+
     def launch(self, index: int) -> bool:
-        console = self._ensure_console()
+        console, index = self.resolve_instance(index)
         return console.launch(index) if console else False
 
     def stop(self, index: int) -> bool:
-        console = self._ensure_console()
+        console, index = self.resolve_instance(index)
         return console.stop(index) if console else False
 
     def restart(self, index: int) -> bool:
-        console = self._ensure_console()
+        console, index = self.resolve_instance(index)
         return console.restart(index) if console else False
 
     def adb_serial(self, index: int) -> str:
-        console = self._ensure_console()
+        console, index = self.resolve_instance(index)
         return console.adb_serial(index) if console else ""
 
     def list_apps(self, index: int) -> list[str]:
-        console = self._ensure_console()
+        console, index = self.resolve_instance(index)
         return console.list_apps(index) if console else []
 
     def launch_app(self, index: int, package_name: str) -> bool:
-        console = self._ensure_console()
+        console, index = self.resolve_instance(index)
         return console.launch_app(index, package_name) if console else False
 
     def kill_app(self, index: int, package_name: str) -> bool:
-        console = self._ensure_console()
+        console, index = self.resolve_instance(index)
         return console.kill_app(index, package_name) if console else False
 
     def screenshot(self, index: int) -> np.ndarray | None:
         """Capture screenshot using LDOpenGL DLL (CreateScreenShotInstance)."""
         from emu.ldopengl import LDOpenGL
 
-        console = self._ensure_console()
+        console, index = self.resolve_instance(index)
         if console is None:
             return None
 
@@ -305,3 +319,66 @@ class LDPlayerBackend(EmulatorBackend):
     def install_dir(self) -> Path | None:
         self._ensure_console()
         return self._install_dir
+
+
+class LDPlayerMultiBackend(LDPlayerBackend):
+    """Aggregate installations with stable, manager-local numeric instance IDs."""
+
+    def __init__(self):
+        super().__init__()
+        self._backends = [LDPlayerBackend(path) for path in _detect_install_dirs()]
+        self._routes: dict[int, tuple[LDConsole, int]] = {}
+        self._ids: dict[tuple[Path, int], int] = {}
+        self._route_lock = threading.RLock()
+
+    def detect_all(self) -> list[EmulatorInfo]:
+        return [info for backend in self._backends if (info := backend.detect())]
+
+    def detect(self) -> EmulatorInfo | None:
+        infos = self.detect_all()
+        return infos[0] if infos else None
+
+    def list_instances(self) -> list[EmulatorInstance]:
+        with self._route_lock:
+            snapshots = []
+            for backend in self._backends:
+                try:
+                    snapshots.append((backend, backend.list_instances()))
+                except (OSError, subprocess.SubprocessError, ValueError):
+                    logger.exception("Could not list instances at %s", backend.install_dir)
+            instances = []
+            # Reserve the primary installation's native IDs before assigning others.
+            for backend, items in snapshots:
+                console = backend._ensure_console()
+                info = backend.detect()
+                if console is None or info is None:
+                    continue
+                for item in items:
+                    key = (console.install_dir, item.index)
+                    if key not in self._ids:
+                        index = item.index if backend is self._backends[0] else 0
+                        if index in self._routes:
+                            index = max(self._routes) + 1
+                        self._ids[key] = index
+                        self._routes[index] = (console, item.index)
+                    instances.append(replace(
+                        item,
+                        index=self._ids[key],
+                        local_index=item.index,
+                        install_dir=console.install_dir,
+                        emulator_name=info.name,
+                    ))
+            return instances
+
+    def resolve_instance(self, index: int) -> tuple[LDConsole, int]:
+        with self._route_lock:
+            if index not in self._routes:
+                self.list_instances()
+            if index not in self._routes:
+                raise ValueError(f"Instance {index} not found")
+            return self._routes[index]
+
+    @property
+    def install_dir(self) -> Path | None:
+        info = self.detect()
+        return info.install_dir if info else None

@@ -20,7 +20,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
-from emu.ldplayer import LDPlayerBackend
+from emu.ldplayer import LDPlayerMultiBackend as LDPlayerBackend
 from emu.models import AutomationScript, InstanceStatus
 from emu.proxy import setup_proxy_routes
 from emu.registry import ScriptRegistry
@@ -39,6 +39,13 @@ def get_backend() -> LDPlayerBackend:
     return backend
 
 
+def _instance_backend(index: int) -> LDPlayerBackend:
+    b = get_backend()
+    if b.get_instance(index) is None:
+        raise HTTPException(status_code=404, detail=f"Instance {index} not found")
+    return b
+
+
 # Farming progress store: {(script_name, instance_index): {current, total, status, ...}}
 _farming_progress: dict[tuple[str, int], dict] = {}
 
@@ -48,10 +55,10 @@ async def lifespan(app: FastAPI):
     """Initialize backend on startup."""
     global backend
     backend = LDPlayerBackend()
-    info = backend.detect()
-    if info:
+    infos = backend.detect_all()
+    for info in infos:
         logger.info("Detected emulator: %s at %s", info.name, info.install_dir)
-    else:
+    if not infos:
         logger.warning("No LDPlayer installation detected")
 
     # Register default scripts (configurable later)
@@ -99,6 +106,9 @@ def create_app() -> FastAPI:
                 "pid": inst.pid,
                 "adb_serial": inst.adb_serial,
                 "emulator_brand": inst.emulator_brand,
+                "local_index": inst.local_index,
+                "install_dir": str(inst.install_dir) if inst.install_dir else None,
+                "emulator_name": inst.emulator_name,
             }
             for inst in instances
         ]
@@ -116,11 +126,14 @@ def create_app() -> FastAPI:
             "pid": inst.pid,
             "adb_serial": inst.adb_serial,
             "emulator_brand": inst.emulator_brand,
+            "local_index": inst.local_index,
+            "install_dir": str(inst.install_dir) if inst.install_dir else None,
+            "emulator_name": inst.emulator_name,
         }
 
     @app.post("/api/instances/{index}/launch")
     async def launch_instance(index: int):
-        b = get_backend()
+        b = _instance_backend(index)
         success = b.launch(index)
         return {"success": success, "message": f"Instance {index} launch requested"}
 
@@ -128,13 +141,13 @@ def create_app() -> FastAPI:
     async def stop_instance(index: int):
         # Script is independent — no longer stopped when emulator stops.
         # The script detects emulator-offline via screenshot failure and handles it gracefully.
-        b = get_backend()
+        b = _instance_backend(index)
         success = b.stop(index)
         return {"success": success, "message": f"Instance {index} stop requested"}
 
     @app.post("/api/instances/{index}/restart")
     async def restart_instance(index: int):
-        b = get_backend()
+        b = _instance_backend(index)
         success = b.restart(index)
         return {"success": success, "message": f"Instance {index} restart requested"}
 
@@ -142,7 +155,7 @@ def create_app() -> FastAPI:
 
     @app.get("/api/instances/{index}/apps")
     async def list_apps(index: int):
-        b = get_backend()
+        b = _instance_backend(index)
         apps = await asyncio.to_thread(b.list_apps, index)
         return {"apps": apps}
 
@@ -152,7 +165,7 @@ def create_app() -> FastAPI:
         package_name = body.get("package_name")
         if not package_name:
             raise HTTPException(status_code=400, detail="package_name required")
-        b = get_backend()
+        b = _instance_backend(index)
         success = b.launch_app(index, package_name)
         return {"success": success}
 
@@ -162,7 +175,7 @@ def create_app() -> FastAPI:
         package_name = body.get("package_name")
         if not package_name:
             raise HTTPException(status_code=400, detail="package_name required")
-        b = get_backend()
+        b = _instance_backend(index)
         success = b.kill_app(index, package_name)
         return {"success": success}
 
@@ -170,7 +183,7 @@ def create_app() -> FastAPI:
 
     @app.get("/api/instances/{index}/screenshot")
     async def screenshot(index: int):
-        b = get_backend()
+        b = _instance_backend(index)
         img = await asyncio.to_thread(b.screenshot, index)
         if img is None:
             raise HTTPException(status_code=503, detail="Screenshot unavailable")
@@ -190,13 +203,13 @@ def create_app() -> FastAPI:
 
     @app.get("/api/instances/{index}/adb")
     async def get_adb(index: int):
-        b = get_backend()
+        b = _instance_backend(index)
         serial = b.adb_serial(index)
         return {"serial": serial}
 
     @app.post("/api/instances/{index}/adb/connect")
     async def connect_adb(index: int):
-        b = get_backend()
+        b = _instance_backend(index)
         serial = b.adb_serial(index)
         # Attempt ADB connect
         import subprocess
@@ -236,17 +249,17 @@ def create_app() -> FastAPI:
         if script is None:
             raise HTTPException(status_code=404, detail=f"Script '{name}' not found")
 
-        b = get_backend()
-        # Get ADB serial — may be unavailable if emulator is stopped
-        try:
-            serial = b.adb_serial(instance_index)
-        except Exception:
-            serial = f"127.0.0.1:{5555 + instance_index * 2}"  # default LDPlayer serial
+        b = _instance_backend(instance_index)
+        serial = b.adb_serial(instance_index)
+        console, local_index = b.resolve_instance(instance_index)
 
         # Use the repo root as cwd for script processes
         import pathlib
         repo_root = pathlib.Path(__file__).parent.parent
-        proc = registry.start(name, instance_index, serial, cwd=repo_root)
+        proc = registry.start(name, instance_index, serial, cwd=repo_root, env={
+            "FGO_LDPLAYER_INSTALL_DIR": str(console.install_dir),
+            "FGO_LDPLAYER_LOCAL_INDEX": str(local_index),
+        })
         return {
             "status": proc.status,
             "pid": proc.pid,
@@ -307,15 +320,12 @@ def create_app() -> FastAPI:
     @app.get("/api/emulators")
     async def list_emulators():
         b = get_backend()
-        info = b.detect()
-        if info is None:
-            return []
         return [{
             "name": info.name,
             "brand": info.brand,
             "version": info.version,
             "install_dir": str(info.install_dir),
-        }]
+        } for info in b.detect_all()]
 
     # --- Setup additional routes ---
     setup_proxy_routes(app, registry)

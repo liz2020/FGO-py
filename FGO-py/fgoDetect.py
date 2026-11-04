@@ -100,9 +100,17 @@ class XDetectBase(metaclass=logMeta(logger)):
     def isAddFriend(self):return self._compare(self.tmpl.ADDFRIEND,(70,560,430,670))
     def isApEmpty(self):return self._compare(self.tmpl.APEMPTY,(522,582,758,652))
     def isAutoFormationPrompt(self):
-        try:text=''.join(self.ocr.ocrArea(self._crop((120,120,1160,690)))).upper()
+        try:text=''.join(self.ocr.ocrArea(self._crop((280,35,1000,140)))).upper()
         except(TypeError,ValueError,IndexError):return False
-        return('AUTO'in text and('FORMATION'in text or'PARTY'in text))or('自动'in text and'编队'in text)or('自動'in text and('編隊'in text or'編成'in text))
+        return('AUTO'in text and('FORMATION'in text or'PARTY'in text))or('自动'in text and('编队'in text or'编成'in text))or('自動'in text and('編隊'in text or'編成'in text))
+    def locateAutoFormationConfirmButton(self):
+        rect=(720,540,1120,650)
+        labels={'自动编成','自动编队','自動編成','自動編隊','AUTOFORMATION','AUTOPARTY'}
+        for result in self.ocr.detect_and_ocr(self._crop(rect)):
+            if re.sub(r'\s+','',result.text).upper()in labels:
+                center=numpy.mean(result.box,axis=0)
+                return(int(center[0])+rect[0],int(center[1])+rect[1])
+        return None
     def isBattleFormationRestriction(self):
         try:text=''.join(self.ocr.ocrArea(self._crop((450,70,850,340)))).upper()
         except(TypeError,ValueError,IndexError):return False
@@ -129,7 +137,10 @@ class XDetectBase(metaclass=logMeta(logger)):
         modalGray=numpy.mean(cv2.cvtColor(modal,cv2.COLOR_BGR2GRAY))
         buttonGray=numpy.mean(cv2.cvtColor(button,cv2.COLOR_BGR2GRAY))
         modalBlue=float(numpy.mean(modal[...,0])-numpy.mean(modal[...,2]))
-        return(827,562)if 100<modalGray<190 and numpy.mean(modalHsv[...,1])>70 and modalBlue>50 and 110<buttonGray<230 and numpy.mean(buttonHsv[...,1])>25 else None
+        if not(100<modalGray<190 and numpy.mean(modalHsv[...,1])>70 and modalBlue>50 and 110<buttonGray<230 and numpy.mean(buttonHsv[...,1])>25):
+            return None
+        text=''.join(self.ocr.ocrArea(modal)).upper()
+        return(827,562)if any(word in text for word in('SKIP','跳过','跳過','スキップ','건너뛰'))else None
     def isBattleContinue(self):return self._compare(self.tmpl.BATTLECONTINUE,(704,530,976,618))
     def isBattleDefeated(self):return self._compare(self.tmpl.DEFEATED,(603,100,690,176))
     def isBattleFinished(self):return self._compare(self.tmpl.DROPITEM,(110,30,264,76))

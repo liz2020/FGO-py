@@ -594,12 +594,13 @@ def skipStoryAfterBattle(timeout_s=90, skip_story=True):
 def _advanceStory(d):
     if _dismissPreBattlePopup(d):
         return
+    if d.isAutoFormationPrompt():
+        _useAutoFormation(d)
+        return
     if skip:=d.locateStorySkipConfirmButton():
         fgoDevice.device.touch(skip,700)
         return
-    if d.isAutoFormationPrompt():
-        _useAutoFormation()
-    elif d.isStorySkip():
+    if d.isStorySkip():
         _skipStory()
     elif d.isAddFriend():
         fgoDevice.device.perform('X',(300,))
@@ -619,7 +620,7 @@ def _startFormation(d):
         _resolveFormationRestriction()
         _confirmBattleStart()
     elif d.isAutoFormationPrompt():
-        _useAutoFormation()
+        _useAutoFormation(d)
         _confirmBattleStart()
     else:
         _confirmBattleStart()
@@ -702,9 +703,16 @@ def _selectSupportByName(support_name):
     logger.warning('Support OCR text not found after refresh: %s', support_name)
     return False
 
-def _useAutoFormation():
+def _useAutoFormation(d=None):
     logger.info('Using auto formation before auto battle')
-    fgoDevice.device.perform('\xDEL ',(1000,1500,1000))
+    if d is None:d=Detect(0,.3)
+    if not d.isAutoFormationPrompt():
+        fgoDevice.device.perform('\xDE',(1000,))
+        d=Detect(0,.3)
+    if not d.isAutoFormationPrompt()or not(pos:=d.locateAutoFormationConfirmButton()):
+        raise ScriptStop('Auto formation confirmation button not found')
+    fgoDevice.device.touch(pos)
+    schedule.sleep(1.5)
 
 def _confirmBattleStart():
     fgoDevice.device.perform(' M ',(2000,2000,10000))
@@ -790,7 +798,7 @@ class Main:
                         _resolveFormationRestriction()
                     else:
                         if self.teamIndex and d.getTeamIndex()+1!=self.teamIndex:fgoDevice.device.perform('\x70\x71\x72\x73\x74\x75\x76\x77\x78\x79\x7A\x7B\x7C\x7D\x7E'[self.teamIndex-1],(1000,))
-                        if self.autoFormation:fgoDevice.device.perform('\xDEL ',(1000,1500,1000))
+                        if self.autoFormation:_useAutoFormation(d)
                     _confirmBattleStart()
                     d=Detect(0,.3)
                     if _dismissPreBattlePopup(d):

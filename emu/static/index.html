@@ -262,13 +262,20 @@
     }
 
     // --- Render ---
+    function escapeHtml(value) {
+        const el = document.createElement('span');
+        el.textContent = value;
+        return el.innerHTML;
+    }
+
     async function loadStatus() {
         try {
             const status = await api('/api/status');
             const el = document.getElementById('emu-info');
             const dot = document.querySelector('#service-status .status-dot');
             if (status.emulator.detected) {
-                el.textContent = `${status.emulator.name} — ${status.emulator.install_dir}`;
+                const emulators = await api('/api/emulators');
+                el.textContent = emulators.map(emu => `${emu.name} — ${emu.install_dir}`).join(' | ');
                 el.style.display = 'block';
                 dot.className = 'status-dot online';
             } else {
@@ -403,10 +410,10 @@
 
         return `<div class="instance-card" id="card-${inst.index}">
             <div class="card-header">
-                <h2>${inst.name}</h2>
+                <h2>${escapeHtml(inst.name)}</h2>
                 <span class="card-status ${statusClass}">${inst.status}</span>
             </div>
-            <div class="card-meta">${stopBtn}Index ${inst.index} · ${inst.adb_serial}</div>
+            <div class="card-meta">${stopBtn}${escapeHtml(inst.emulator_name || 'LDPlayer')} · Index ${inst.local_index ?? inst.index} · ${inst.adb_serial}${inst.install_dir ? `<br>${escapeHtml(inst.install_dir)}` : ''}</div>
             ${preview}
             ${buttons}
             ${scriptsHtml}

@@ -40,6 +40,9 @@ class EmulatorInstance:
     adb_serial: str = ""  # e.g. "127.0.0.1:5555"
     running_app: str = ""  # package name of foreground app
     emulator_brand: str = ""  # e.g. "ldplayer"
+    local_index: int | None = None
+    install_dir: Path | None = None
+    emulator_name: str = ""
 
     @property
     def is_running(self) -> bool:
