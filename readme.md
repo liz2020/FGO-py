@@ -64,6 +64,19 @@ GitHub项目地址:[https://github.com/hgjazhgj/FGO-py/](https://github.com/hgja
 
 本项目`FGO-py/fgoImage/servant/`下的图像来自于[茹西教王的理想鄉](https://kazemai.github.io/fgo-vz/),`FGO-py/fgoImage/class`和`material`中的图标与`FGO-py/fgoMetadata.py`中的部分数据来自于[Mooncell](https://fgo.wiki/),以上内容经过加工,不按原样提供,**不依照License开源**  
 
+## Servant recognition data in this fork
+
+Servant metadata and recognition images are synchronized with
+[hgjazhgj/FGO-py at `7b0cb32ff8ee`](https://github.com/hgjazhgj/FGO-py/commit/7b0cb32ff8ee8207715f4ea1084c1a86b5412d1f):
+465 servant entries through ID 477, including updates to existing servants.
+Grand Class recognition includes Saber, Berserker, Lancer, Alter Ego, Pretender,
+and Beast. These are recognition templates, not automation of Grand-specific
+quests or mechanics; recognition on a particular regional client still depends
+on its artwork and UI matching the templates.
+
+The original asset sources and license exclusions stated above still apply;
+this synchronization does not relicense those assets under AGPL.
+
 # 说明 Instruction
 
 FGO-py一经立项,就把*打破当前游戏版本下想尽办法3t速刷的固有思维,回归刚开服时克制队xjbd的环境*作为自身的初心使命  
