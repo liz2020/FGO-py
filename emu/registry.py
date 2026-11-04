@@ -72,6 +72,7 @@ class ScriptRegistry:
         index: int,
         adb_serial: str,
         cwd: Path | None = None,
+        env: dict[str, str] | None = None,
     ) -> ScriptProcess:
         """Start a script process targeting a specific emulator instance.
 
@@ -80,6 +81,7 @@ class ScriptRegistry:
             index: Emulator instance index.
             adb_serial: ADB serial for the instance (e.g. '127.0.0.1:5555').
             cwd: Working directory for the subprocess.
+            env: Installation-specific overrides for the subprocess environment.
 
         Returns:
             ScriptProcess with process info.
@@ -114,6 +116,7 @@ class ScriptRegistry:
                 command,
                 shell=True,
                 cwd=cwd,
+                env={**os.environ, **env} if env is not None else None,
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
                 creationflags=subprocess.CREATE_NO_WINDOW if hasattr(subprocess, "CREATE_NO_WINDOW") else 0,

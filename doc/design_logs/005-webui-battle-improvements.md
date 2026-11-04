@@ -91,6 +91,13 @@ Queue items are flat `<li>` elements showing a one-line description + remove but
 
 ## 3. Auto Battle Button
 
+Pre-battle auto-formation confirmation is handled before story-skip dialogs.
+The confirmation target is the center of the recognized positive
+自动编成/自动编队 button, not the legacy `L` key coordinate. Story-skip
+confirmation requires skip-related text as well as the modal's visual checks;
+blue formation dialogs must not be accepted solely by color. An unrecognized
+auto-formation confirmation stops the task instead of sending blind clicks.
+
 ### Purpose
 
 A one-off action for when the user is already in a battle screen (e.g., manually entered a quest or resumed from a crash). Picks up the current battle and runs it to completion using the smart `Turn` logic.

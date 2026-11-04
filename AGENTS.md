@@ -85,7 +85,7 @@ deploy/              # Deployment scripts
 ## Environment
 
 - **Python**: 3.11+ via `uv` (see `pyproject.toml`)
-- **Emulator**: LDPlayer 14 (`C:\leidian\LDPlayer14`)
+- **Emulator**: LDPlayer 4, 9, or 14 (`C:\leidian\LDPlayer4`, `LDPlayer9`, `LDPlayer14`); the manager lists all detected installations.
 - **Game**: FGO CN (Bilibili) — package `com.bilibili.fatego`
 - **OS**: Windows (Win32 API required for PostMessage input)
 - **Run emu manager**: `uv run python -m emu`

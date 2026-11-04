@@ -22,6 +22,7 @@ def client():
         version="14",
         install_dir=MagicMock(__str__=lambda s: r"C:\leidian\LDPlayer14"),
     )
+    mock_backend.detect_all.return_value = [mock_backend.detect.return_value]
     mock_backend.list_instances.return_value = [
         EmulatorInstance(
             index=0, name="fgo", status=InstanceStatus.RUNNING,
@@ -78,6 +79,9 @@ class TestInstanceEndpoints:
         assert resp.status_code == 200
         assert resp.json()["success"] is True
 
+    def test_launch_missing_instance(self, client):
+        assert client.post("/api/instances/99/launch").status_code == 404
+
 
 class TestSystemEndpoints:
     def test_status(self, client):
@@ -108,6 +112,25 @@ class TestScriptEndpoints:
         resp = client.get("/api/instances/0/adb")
         assert resp.status_code == 200
         assert resp.json()["serial"] == "127.0.0.1:5555"
+
+    def test_start_passes_installation_to_script(self, client):
+        import emu.service
+        from pathlib import Path
+        b = emu.service.backend
+        console = MagicMock(install_dir=Path(r"C:\leidian\LDPlayer9"))
+        b.resolve_instance.return_value = (console, 0)
+        with patch.object(emu.service.registry, "start") as start:
+            start.return_value = MagicMock(status="running", pid=123, port=15002, instance_index=1)
+            resp = client.post("/api/scripts/fgo/start", json={"instance_index": 1})
+        assert resp.status_code == 200
+        assert start.call_args.args == ("fgo", 1, "127.0.0.1:5557")
+        assert start.call_args.kwargs["env"] == {
+            "FGO_LDPLAYER_INSTALL_DIR": str(console.install_dir),
+            "FGO_LDPLAYER_LOCAL_INDEX": "0",
+        }
+
+    def test_start_missing_instance(self, client):
+        assert client.post("/api/scripts/fgo/start", json={"instance_index": 99}).status_code == 404
 
 
 def test_shutdown_stops_scripts_without_stopping_emulator():
@@ -146,3 +169,30 @@ def test_proxy_error_page_has_refresh_button():
     assert "Refresh" in body
     assert "window.location.reload()" in body
     assert "Back to dashboard" in body
+
+
+def test_multi_installation_api_keeps_duplicate_instances_separate(tmp_path):
+    import emu.service
+    from emu.ldplayer import LDConsole, LDPlayerMultiBackend
+
+    paths = [tmp_path / f"LDPlayer{v}" for v in ("4", "9", "14")]
+    for path in paths:
+        path.mkdir()
+        (path / "ldconsole.exe").touch()
+    with patch("emu.ldplayer._detect_install_dirs", return_value=paths):
+        multi_backend = LDPlayerMultiBackend()
+    with patch.object(emu.service, "LDPlayerBackend", return_value=multi_backend), patch.object(
+        LDConsole, "_run", return_value="0,fgo,0,0,0,-1,-1\n",
+    ), TestClient(create_app()) as client:
+        data = client.get("/api/instances").json()
+        assert len(data) == 3
+        assert [i["index"] for i in data] == [0, 1, 2]
+        assert [i["local_index"] for i in data] == [0, 0, 0]
+        assert [i["install_dir"] for i in data] == [str(p) for p in paths]
+        assert [i["name"] for i in data] == ["fgo"] * 3
+        assert len(client.get("/api/emulators").json()) == 3
+        console, _ = multi_backend.resolve_instance(1)
+        with patch.object(console, "launch", return_value=True) as launch:
+            assert client.post("/api/instances/1/launch").json()["success"]
+        launch.assert_called_once_with(0)
+        assert client.get("/api/instances/2").json()["emulator_name"] == "LDPlayer 14"

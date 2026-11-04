@@ -70,6 +70,18 @@ class TestPortAllocation:
 
 
 class TestProcessLifecycle:
+    def test_start_merges_installation_environment(self, registry, fgo_script):
+        registry.register(fgo_script)
+        with patch.dict("os.environ", {"PATH": "existing-path"}), patch("subprocess.Popen") as popen:
+            registry.start("FGO-py", 3, "127.0.0.1:5555", env={
+                "FGO_LDPLAYER_INSTALL_DIR": r"C:\leidian\LDPlayer9",
+                "FGO_LDPLAYER_LOCAL_INDEX": "0",
+            })
+        env = popen.call_args.kwargs["env"]
+        assert env["PATH"] == "existing-path"
+        assert env["FGO_LDPLAYER_INSTALL_DIR"] == r"C:\leidian\LDPlayer9"
+        assert env["FGO_LDPLAYER_LOCAL_INDEX"] == "0"
+
     def test_start_creates_process(self, registry, fgo_script):
         registry.register(fgo_script)
 

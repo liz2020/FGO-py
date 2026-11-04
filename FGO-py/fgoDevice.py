@@ -73,7 +73,12 @@ class LDPlayerDevice:
         from emu.ldplayer import LDPlayerBackend, LDConsole
         from emu.ldopengl import LDOpenGL
 
-        self.backend = LDPlayerBackend()
+        from pathlib import Path
+        manager_index = index
+        install_dir = os.environ.get("FGO_LDPLAYER_INSTALL_DIR")
+        if install_dir:
+            index = int(os.environ["FGO_LDPLAYER_LOCAL_INDEX"])
+        self.backend = LDPlayerBackend(Path(install_dir) if install_dir else None)
         console = self.backend._ensure_console()
         if console is None:
             raise RuntimeError("LDPlayer not detected")
@@ -96,7 +101,7 @@ class LDPlayerDevice:
             console.install_dir, index,
             pid=self._pid, width=self._width, height=self._height,
         )
-        self.name = f"ldplayer:{index}"
+        self.name = f"ldplayer:{manager_index}"
         # Detect running FGO package
         self.package = self._detect_fgo_package()
         # Find the RenderWindow HWND for Win32 input
