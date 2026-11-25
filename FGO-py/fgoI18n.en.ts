@@ -887,5 +887,17 @@
       <source>5-1</source>
       <translation>Paper Moon</translation>
     </message>
+    <message>
+      <source>5-2</source>
+      <translation>Ordeal Call II: Id</translation>
+    </message>
+    <message>
+      <source>5-3</source>
+      <translation>Ordeal Call III: Archetype Inception</translation>
+    </message>
+    <message>
+      <source>5-4</source>
+      <translation>Ordeal Call IV: Trinity Metatronios</translation>
+    </message>
   </context>
 </TS>

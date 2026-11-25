@@ -1494,5 +1494,177 @@
       <source>5-1-10-0</source>
       <translation>生产部本部</translation>
     </message>
+    <message>
+      <source>5-2</source>
+      <translation>奏章Ⅱ 伊底</translation>
+    </message>
+    <message>
+      <source>5-3</source>
+      <translation>奏章Ⅲ 原型肇始</translation>
+    </message>
+    <message>
+      <source>5-4</source>
+      <translation>奏章Ⅳ 三位一体·梅塔特洛尼俄斯</translation>
+    </message>
+    <message>
+      <source>5-2-0-0</source>
+      <translation>闹市区 / 购物后归程</translation>
+    </message>
+    <message>
+      <source>5-2-1-0</source>
+      <translation>自家 / 秘密的碰头</translation>
+    </message>
+    <message>
+      <source>5-2-2-0</source>
+      <translation>学校 / 宁静的放学后</translation>
+    </message>
+    <message>
+      <source>5-2-2-1</source>
+      <translation>学校 / 调查七大不可思议</translation>
+    </message>
+    <message>
+      <source>5-2-2-2</source>
+      <translation>学校 / 突然叫出</translation>
+    </message>
+    <message>
+      <source>5-2-2-3</source>
+      <translation>学校 / 留校特训</translation>
+    </message>
+    <message>
+      <source>5-2-3-0</source>
+      <translation>上学路 / 习以为常的道路</translation>
+    </message>
+    <message>
+      <source>5-2-4-0</source>
+      <translation>东京站 / 启程的车站</translation>
+    </message>
+    <message>
+      <source>5-2-5-0</source>
+      <translation>西新宿 / 相遇的十字路口</translation>
+    </message>
+    <message>
+      <source>5-2-5-1</source>
+      <translation>西新宿 / 伫立的摩天大楼</translation>
+    </message>
+    <message>
+      <source>5-2-6-0</source>
+      <translation>御台场 / 不作美的天气</translation>
+    </message>
+    <message>
+      <source>5-2-7-0</source>
+      <translation>新宿御苑 / 鸟类观赏</translation>
+    </message>
+    <message>
+      <source>5-3-0-0</source>
+      <translation>哈利法塔 / 月球之巅</translation>
+    </message>
+    <message>
+      <source>5-3-1-0</source>
+      <translation>市中心 / 月球街道</translation>
+    </message>
+    <message>
+      <source>5-3-2-0</source>
+      <translation>商务区 / 运算都市</translation>
+    </message>
+    <message>
+      <source>5-3-3-0</source>
+      <translation>马里昂酒店 / 奢靡自助</translation>
+    </message>
+    <message>
+      <source>5-3-4-0</source>
+      <translation>沙上航线 / 蠕虫沙盒</translation>
+    </message>
+    <message>
+      <source>5-3-5-0</source>
+      <translation>旧迪拜 / 月球漫步</translation>
+    </message>
+    <message>
+      <source>5-3-6-0</source>
+      <translation>机械工厂 / 机械城市</translation>
+    </message>
+    <message>
+      <source>5-3-7-0</source>
+      <translation>高扬购物中心 / 月球购物</translation>
+    </message>
+    <message>
+      <source>5-3-8-0</source>
+      <translation>迪拜云溪港 / 月球巡航</translation>
+    </message>
+    <message>
+      <source>5-3-9-0</source>
+      <translation>单元海滩 / 采集星辰</translation>
+    </message>
+    <message>
+      <source>5-3-10-0</source>
+      <translation>环形山中心区 / 蛋糕桌之园</translation>
+    </message>
+    <message>
+      <source>5-3-11-0</source>
+      <translation>千年城游乐园 / 幻想巡游</translation>
+    </message>
+    <message>
+      <source>5-3-12-0</source>
+      <translation>朱美拉棕榈岛 / 月球巴士岛</translation>
+    </message>
+    <message>
+      <source>5-3-13-0</source>
+      <translation>喷泉广场 / 月球迪拜喷泉</translation>
+    </message>
+    <message>
+      <source>5-3-14-0</source>
+      <translation>特别航路 / 名流之船</translation>
+    </message>
+    <message>
+      <source>5-4-0-0</source>
+      <translation>大法庭 / 惩戒邪恶之辈</translation>
+    </message>
+    <message>
+      <source>5-4-1-0</source>
+      <translation>色欲区 / 为色欲所笼罩之城</translation>
+    </message>
+    <message>
+      <source>5-4-2-0</source>
+      <translation>格拉纳托 / 久居则安的格拉纳托</translation>
+    </message>
+    <message>
+      <source>5-4-3-0</source>
+      <translation>暴食区 / 禁果之园</translation>
+    </message>
+    <message>
+      <source>5-4-4-0</source>
+      <translation>阿刻戎河 / 亡者聚集之河</translation>
+    </message>
+    <message>
+      <source>5-4-5-0</source>
+      <translation>色欲圈的城市 / 沉溺于爱的罪人们</translation>
+    </message>
+    <message>
+      <source>5-4-6-0</source>
+      <translation>暴食圈的要塞 / 狱犬的地盘</translation>
+    </message>
+    <message>
+      <source>5-4-7-0</source>
+      <translation>贪婪圈的要塞 / 楚楚可怜的贪婪城主</translation>
+    </message>
+    <message>
+      <source>5-4-8-0</source>
+      <translation>斯堤克斯沼泽 / 愤怒汇聚的死沼</translation>
+    </message>
+    <message>
+      <source>5-4-9-0</source>
+      <translation>暴力圈的城市 / 魅惑的绝对支配</translation>
+    </message>
+    <message>
+      <source>5-4-10-0</source>
+      <translation>罪人的战场 / 恶意翻涌的交锋</translation>
+    </message>
+    <message>
+      <source>5-4-11-0</source>
+      <translation>永恒的冰狱 / 回荡于冰原的叹息</translation>
+    </message>
+    <message>
+      <source>5-4-12-0</source>
+      <translation>愤怒区 / 悔悟的祈祷</translation>
+    </message>
   </context>
 </TS>

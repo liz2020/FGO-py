@@ -110,7 +110,7 @@ After clicking the close-notice X, sleep an extra ~1s before the next iteration.
 ### Loop shape
 
 ```python
-def launch_game(device, detect_cls, timeout_s=200):
+def launch_game(device, detect_cls, timeout_s=300):
     ldconsole.launch_app(index, "com.bilibili.fatego")
     deadline = time.monotonic() + timeout_s
     while time.monotonic() < deadline:
@@ -144,13 +144,13 @@ Register a new task type in `fgoTaskQueue.py`:
 
 | Type | Params | Description |
 |------|--------|-------------|
-| `launch_game` | `timeout_s` (default 200) | Launch FGO and drive it to an unobstructed main interface, including CN resource-update and startup popup handling. |
+| `launch_game` | `timeout_s` (default 300) | Launch FGO and drive it to an unobstructed main interface, including CN resource-update and startup popup handling. |
 
 Dispatch:
 
 ```python
 case "launch_game":
-    timeout_s = task.params.get("timeout_s", 200)
+    timeout_s = task.params.get("timeout_s", 300)
     fgoKernel.launchGame(timeout_s=timeout_s)
     return {"reached_main": True}
 ```
@@ -162,7 +162,7 @@ Because FGO-py's device may be in the "disconnected placeholder" state after `st
 Add `launch_game` to the "Add Task" section in `queue.html` (introduced in 008):
 
 ```
-Task Type: [Launch Game ▾]  → Timeout (s): [200]
+Task Type: [Launch Game ▾]  → Timeout (s): [300]
 ```
 
 No other parameters. A single "Timeout" field is enough — power users can extend it for a slow first launch.
@@ -199,7 +199,7 @@ Post-update recovery: if FGO pushes a CN resource update overnight, `launch_game
 
 ### Phase 2: Kernel function
 
-1. Add `launchGame(timeout_s=200)` to `fgoKernel.py` implementing the loop above.
+1. Add `launchGame(timeout_s=300)` to `fgoKernel.py` implementing the loop above.
 2. Call `ldconsole runapp` via a small helper that resolves the current instance's index (task worker already knows this).
 
 ### Phase 3: Task type and UI
@@ -218,5 +218,5 @@ Post-update recovery: if FGO pushes a CN resource update overnight, `launch_game
 1. **CADPA logo bounding box** — Measured at `(1170, 0, 1275, 130)` from the CN login screenshot. May shift between game versions; the bbox has ~20 px of padding on each side to tolerate small movements.
 2. **Server-selection screen** — If the account has multiple bound servers, an extra tap may be needed. Deferred until a user hits it.
 3. **Multiple notification popups** — Some days FGO stacks two announcement modals (e.g., 游戏公告 followed by 游玩指引). The loop handles this naturally (dismiss one, next iteration sees the second). Both sample popups (`notification_1.png` and `notification_2.png`) share the identical top-right X-button asset, so a single `closenotice.png` template covers both. Confirm this still holds for maintenance / event popups when they appear.
-4. **Timeout default** — 200s gives cold emulator/game startup and common startup popups more room before surfacing a timeout.
+4. **Timeout default** — 300s gives cold emulator/game startup and common startup popups more room before surfacing a timeout.
 5. **资料更新 download progress** — The task starts the CN resource update and extends the deadline, but it does not parse the download percentage. Very large patches may need a longer `timeout_s`.

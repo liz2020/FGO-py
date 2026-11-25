@@ -2278,5 +2278,177 @@
       <source>5-1-10-0</source>
       <translation>生産部本部</translation>
     </message>
+    <message>
+      <source>5-2</source>
+      <translation>奏章Ⅱ イド</translation>
+    </message>
+    <message>
+      <source>5-3</source>
+      <translation>奏章Ⅲ アーキタイプ・インセプション</translation>
+    </message>
+    <message>
+      <source>5-4</source>
+      <translation>奏章Ⅳ トリニティ・メタトロニオス</translation>
+    </message>
+    <message>
+      <source>5-2-0-0</source>
+      <translation>繁華街 / かいもの帰り</translation>
+    </message>
+    <message>
+      <source>5-2-1-0</source>
+      <translation>自宅 / ないしょの待ち合わせ</translation>
+    </message>
+    <message>
+      <source>5-2-2-0</source>
+      <translation>学校 / しずかな放課後</translation>
+    </message>
+    <message>
+      <source>5-2-2-1</source>
+      <translation>学校 / ななふしぎ調査</translation>
+    </message>
+    <message>
+      <source>5-2-2-2</source>
+      <translation>学校 / とつぜんの呼び出し</translation>
+    </message>
+    <message>
+      <source>5-2-2-3</source>
+      <translation>学校 / いのこり特訓</translation>
+    </message>
+    <message>
+      <source>5-2-3-0</source>
+      <translation>通学路 / いつもの通い道</translation>
+    </message>
+    <message>
+      <source>5-2-4-0</source>
+      <translation>東京駅 / たびだちの駅</translation>
+    </message>
+    <message>
+      <source>5-2-5-0</source>
+      <translation>西新宿 / であいの交差点</translation>
+    </message>
+    <message>
+      <source>5-2-5-1</source>
+      <translation>西新宿 / たたずむ摩天楼</translation>
+    </message>
+    <message>
+      <source>5-2-6-0</source>
+      <translation>お台場 / あいにくの空模様</translation>
+    </message>
+    <message>
+      <source>5-2-7-0</source>
+      <translation>新宿御苑 / バードウォッチング</translation>
+    </message>
+    <message>
+      <source>5-3-0-0</source>
+      <translation>ブルジュ・ハリファ / トップ・オブ・ザ・ムーン</translation>
+    </message>
+    <message>
+      <source>5-3-1-0</source>
+      <translation>ダウンタウン / ムーン・ストリート</translation>
+    </message>
+    <message>
+      <source>5-3-2-0</source>
+      <translation>オフィス街 / コンピューティング・シティ</translation>
+    </message>
+    <message>
+      <source>5-3-3-0</source>
+      <translation>マリオンホテル / ラグジュアリー・ビュッフェ</translation>
+    </message>
+    <message>
+      <source>5-3-4-0</source>
+      <translation>砂上航路 / ワームズ・サンドボックス</translation>
+    </message>
+    <message>
+      <source>5-3-5-0</source>
+      <translation>オールド・ドバイ / ムーン・ウォーキング</translation>
+    </message>
+    <message>
+      <source>5-3-6-0</source>
+      <translation>機械工場 / マシーナリー・タウン</translation>
+    </message>
+    <message>
+      <source>5-3-7-0</source>
+      <translation>コヤン・モール / ムーン・ショッピング</translation>
+    </message>
+    <message>
+      <source>5-3-8-0</source>
+      <translation>クリークハーバー / ムーン・クルージング</translation>
+    </message>
+    <message>
+      <source>5-3-9-0</source>
+      <translation>ユニットビーチ / スター・ピッキング</translation>
+    </message>
+    <message>
+      <source>5-3-10-0</source>
+      <translation>クレーター中心部 / ケーキテーブル・ガーデン</translation>
+    </message>
+    <message>
+      <source>5-3-11-0</source>
+      <translation>千年城遊園地 / ファンタズム・パレード</translation>
+    </message>
+    <message>
+      <source>5-3-12-0</source>
+      <translation>パーム・ジュメイラ / ムーンバス・アイランド</translation>
+    </message>
+    <message>
+      <source>5-3-13-0</source>
+      <translation>噴水広場 / ムーン・ドバイ・ファウンテン</translation>
+    </message>
+    <message>
+      <source>5-3-14-0</source>
+      <translation>特別航路 / セレブリティ・ボート</translation>
+    </message>
+    <message>
+      <source>5-4-0-0</source>
+      <translation>大法廷 / 悪しきは罰せよ</translation>
+    </message>
+    <message>
+      <source>5-4-1-0</source>
+      <translation>色欲区 / 色情に染まる街</translation>
+    </message>
+    <message>
+      <source>5-4-2-0</source>
+      <translation>グラナート / 住めば都のグラナート</translation>
+    </message>
+    <message>
+      <source>5-4-3-0</source>
+      <translation>暴食区 / 禁じられた果実の園</translation>
+    </message>
+    <message>
+      <source>5-4-4-0</source>
+      <translation>アケローン河 / 亡者の群がる河</translation>
+    </message>
+    <message>
+      <source>5-4-5-0</source>
+      <translation>色欲圏の街 / 愛に溺れた罪人たち</translation>
+    </message>
+    <message>
+      <source>5-4-6-0</source>
+      <translation>暴食圏の城塞 / 獄犬の縄張り</translation>
+    </message>
+    <message>
+      <source>5-4-7-0</source>
+      <translation>強欲圏の城塞 / 可憐な強欲城主</translation>
+    </message>
+    <message>
+      <source>5-4-8-0</source>
+      <translation>ステュクス沼 / 憤怒の集う死沼</translation>
+    </message>
+    <message>
+      <source>5-4-9-0</source>
+      <translation>暴力圏の街 / 魅惑の絶対支配</translation>
+    </message>
+    <message>
+      <source>5-4-10-0</source>
+      <translation>罪人の戦場 / 渦巻く悪意の応酬</translation>
+    </message>
+    <message>
+      <source>5-4-11-0</source>
+      <translation>永遠の氷牢 / 氷原に轟く嘆き</translation>
+    </message>
+    <message>
+      <source>5-4-12-0</source>
+      <translation>憤怒区 / 悔悟の祈り</translation>
+    </message>
   </context>
 </TS>
