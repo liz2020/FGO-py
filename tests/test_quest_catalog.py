@@ -241,16 +241,62 @@ def test_chapter_can_resume_on_earth_without_repeating_terminal_click(navigation
     navigation["fgoDevice"].device.touch.assert_called_once_with((730, 160))
 
 
+@pytest.mark.parametrize("earth,locations,expected", [
+    (
+        [False] + [False] * 4 + [True, False],
+        [(730, 200), (735, 205), (730, 160), None],
+        [call((730, 200)), call((735, 205)), call((730, 160))],
+    ),
+    (
+        [False, True] + [True] * 4 + [False],
+        [(730, 200), (730, 160), (735, 165), None],
+        [call((730, 200)), call((730, 160)), call((735, 165))],
+    ),
+])
+def test_chapter_retries_not_yet_clickable_banner_on_its_source_page(
+    navigation, earth, locations, expected,
+):
+    earth_states = iter(earth)
+    positions = iter(locations)
+    frames = []
+
+    def detect(delay):
+        frames.append(delay)
+        return SimpleNamespace(
+            isMainInterface=lambda: True,
+            isOrdealEarth=lambda: next(earth_states),
+            findChapter=lambda name: next(positions),
+        )
+
+    navigation["Detect"].side_effect = detect
+    navigation["OrdealChapter"]((5, 2))()
+    assert navigation["fgoDevice"].device.touch.call_args_list == expected
+    assert frames.count(.5) == 6
+    navigation["fgoDevice"].device.swipe.assert_not_called()
+
+
+def test_chapter_stops_after_bounded_retries_of_unresponsive_terminal(navigation):
+    navigation["Detect"].return_value = SimpleNamespace(
+        isMainInterface=lambda: True,
+        isOrdealEarth=lambda: False,
+        findChapter=lambda name: (730, 200),
+    )
+    with pytest.raises(RuntimeError, match="not found on white Earth"):
+        navigation["OrdealChapter"]((5, 2))()
+    assert navigation["fgoDevice"].device.touch.call_args_list == [call((730, 200))] * 5
+    navigation["fgoDevice"].device.swipe.assert_not_called()
+
+
 def test_chapter_stops_when_second_click_does_not_open_map(navigation):
     locations = iter([(730, 200), (730, 160)])
     earth = iter([False] + [True] * 21)
     navigation["Detect"].return_value = SimpleNamespace(
         isMainInterface=lambda: True, isOrdealEarth=lambda: next(earth),
-        findChapter=lambda name: next(locations),
+        findChapter=lambda name: next(locations, (730, 160)),
     )
     with pytest.raises(RuntimeError, match="map did not open"):
         navigation["OrdealChapter"]((5, 2))()
-    assert navigation["fgoDevice"].device.touch.call_count == 2
+    assert navigation["fgoDevice"].device.touch.call_count == 6
     navigation["fgoDevice"].device.swipe.assert_not_called()
 
 
