@@ -3,7 +3,7 @@
 import ast
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, call
 import re
 
 import cv2
@@ -29,6 +29,9 @@ def load_definitions(filename, names, namespace):
 def detectors():
     return load_definitions("fgoDetect.py", {
         "isAutoFormationPrompt", "locateAutoFormationConfirmButton", "locateStorySkipConfirmButton",
+        "isBattleFormationRestriction", "locateFormationRestrictionCloseButton",
+        "locateFormationDecideButton",
+        "locateFriendRequestEndButton",
     }, {"numpy": numpy, "cv2": cv2, "re": re})
 
 
@@ -91,6 +94,8 @@ def kernel():
         "Detect": MagicMock(), "ScriptStop": ScriptStop,
         "_dismissPreBattlePopup": MagicMock(return_value=False),
         "_confirmBattleStart": MagicMock(),
+        "_resolveFormationRestriction": MagicMock(),
+        "_dismissFriendRequest": MagicMock(return_value=False),
     })
 
 
@@ -98,8 +103,12 @@ def test_open_auto_formation_prompt_is_confirmed_without_reopening(kernel):
     d = MagicMock()
     d.isAutoFormationPrompt.return_value = True
     d.locateAutoFormationConfirmButton.return_value = (929, 604)
+    kernel["Detect"].return_value.locateFormationDecideButton.return_value = (1168, 668)
     kernel["_useAutoFormation"](d)
-    kernel["fgoDevice"].device.touch.assert_called_once_with((929, 604))
+    assert kernel["fgoDevice"].device.touch.call_args_list == [
+        call((929, 604)),
+        call((1168, 668), 1000),
+    ]
     kernel["fgoDevice"].device.perform.assert_not_called()
     kernel["schedule"].sleep.assert_called_once_with(1.5)
 
@@ -109,10 +118,14 @@ def test_auto_formation_opens_prompt_then_detects_confirmation(kernel):
     d.isAutoFormationPrompt.return_value = False
     prompt.isAutoFormationPrompt.return_value = True
     prompt.locateAutoFormationConfirmButton.return_value = (929, 604)
+    prompt.locateFormationDecideButton.return_value = (1168, 668)
     kernel["Detect"].return_value = prompt
     kernel["_useAutoFormation"](d)
     kernel["fgoDevice"].device.perform.assert_called_once_with("\xDE", (1000,))
-    kernel["fgoDevice"].device.touch.assert_called_once_with((929, 604))
+    assert kernel["fgoDevice"].device.touch.call_args_list == [
+        call((929, 604)),
+        call((1168, 668), 1000),
+    ]
 
 
 def test_missing_auto_formation_button_stops_without_blind_click(kernel):
@@ -127,16 +140,22 @@ def test_missing_auto_formation_button_stops_without_blind_click(kernel):
 
 def test_auto_formation_precedes_false_positive_story_skip(kernel):
     d = MagicMock()
+    d.isBattleFormationRestriction.return_value = False
     d.isAutoFormationPrompt.return_value = True
     d.locateAutoFormationConfirmButton.return_value = (929, 604)
     d.locateStorySkipConfirmButton.return_value = (827, 562)
+    kernel["Detect"].return_value.locateFormationDecideButton.return_value = (1168, 668)
     kernel["_advanceStory"](d)
     d.locateStorySkipConfirmButton.assert_not_called()
-    kernel["fgoDevice"].device.touch.assert_called_once_with((929, 604))
+    assert kernel["fgoDevice"].device.touch.call_args_list == [
+        call((929, 604)),
+        call((1168, 668), 1000),
+    ]
 
 
 def test_story_skip_still_uses_its_own_confirmation(kernel):
     d = MagicMock()
+    d.isBattleFormationRestriction.return_value = False
     d.isAutoFormationPrompt.return_value = False
     d.locateStorySkipConfirmButton.return_value = (827, 562)
     kernel["_advanceStory"](d)
@@ -148,6 +167,158 @@ def test_formation_confirms_auto_party_before_battle_start(kernel):
     d.isBattleFormationRestriction.return_value = False
     d.isAutoFormationPrompt.return_value = True
     d.locateAutoFormationConfirmButton.return_value = (929, 604)
+    kernel["Detect"].return_value.locateFormationDecideButton.return_value = (1168, 668)
+    actions = MagicMock()
+    actions.attach_mock(kernel["fgoDevice"].device.touch, "touch")
+    actions.attach_mock(kernel["_confirmBattleStart"], "start")
     kernel["_startFormation"](d)
+    assert actions.mock_calls == [
+        call.touch((929, 604)),
+        call.touch((1168, 668), 1000),
+        call.start(),
+    ]
+
+
+@pytest.mark.parametrize("text", [
+    "编成条件", "编 成 条 件", "編成条件", "編成條件",
+    "编制限制", "編成制限", "Formation Conditions", "Formation Restrictions",
+])
+def test_formation_condition_dialog_is_a_restriction(detectors, text):
+    d = MagicMock()
+    d.ocr.ocrArea.return_value = [text, "要进行本关卡"]
+    assert detectors["isBattleFormationRestriction"](d)
+
+
+@pytest.mark.parametrize("text", ["队伍确认", "自动编成执行确认", "SKIP STORY"])
+def test_unrelated_dialog_is_not_a_formation_restriction(detectors, text):
+    d = MagicMock()
+    d.ocr.ocrArea.return_value = [text]
+    assert not detectors["isBattleFormationRestriction"](d)
+
+
+def test_formation_restriction_close_uses_recognized_label(detectors):
+    d = MagicMock()
+    d.ocr.detect_and_ocr.return_value = [
+        SimpleNamespace(text="关闭", box=numpy.array([[151, 84], [227, 84], [227, 116], [151, 116]])),
+    ]
+    assert detectors["locateFormationRestrictionCloseButton"](d) == (639, 600)
+
+
+@pytest.mark.parametrize("text", ["决定", "決定", "CONFIRM"])
+def test_formation_decide_targets_recognized_label(detectors, text):
+    d = MagicMock()
+    d.ocr.detect_and_ocr.return_value = [
+        SimpleNamespace(text=text, box=numpy.array([[68, 28], [148, 28], [148, 68], [68, 68]])),
+    ]
+    assert detectors["locateFormationDecideButton"](d) == (1168, 668)
+
+
+def test_friend_request_end_requires_request_heading(detectors):
+    d = MagicMock()
+    d.ocr.ocrArea.return_value = ["是否向提供支援的玩家", "发送好友申请？"]
+    d.ocr.detect_and_ocr.return_value = [
+        SimpleNamespace(text="结束", box=numpy.array([[200, 40], [260, 40], [260, 80], [200, 80]])),
+        SimpleNamespace(text="申请好友", box=numpy.array([[0, 0]] * 4)),
+    ]
+    assert detectors["locateFriendRequestEndButton"](d) == (330, 620)
+    d.ocr.ocrArea.return_value = ["战斗结束"]
+    assert detectors["locateFriendRequestEndButton"](d) is None
+
+
+@pytest.mark.parametrize("skip_story", [True, False])
+def test_post_battle_ends_friend_request_even_without_story_skip(skip_story):
+    namespace = load_definitions("fgoKernel.py", {
+        "skipStoryAfterBattle", "_dismissFriendRequest",
+    }, {
+        "time": MagicMock(), "schedule": MagicMock(), "Detect": MagicMock(),
+        "fgoDevice": MagicMock(), "logger": MagicMock(), "_advanceStory": MagicMock(),
+    })
+    namespace["time"].time.return_value = 0
+    request, done = MagicMock(), MagicMock()
+    for method in ("isMainInterface", "isBattleContinue", "isBattleFormation",
+                   "isChooseFriend", "isTurnBegin"):
+        getattr(request, method).return_value = False
+    request.locateFriendRequestEndButton.return_value = (330, 620)
+    done.isMainInterface.return_value = True
+    namespace["Detect"].side_effect = [request, done]
+    assert namespace["skipStoryAfterBattle"](skip_story=skip_story)
+    namespace["fgoDevice"].device.touch.assert_called_once_with((330, 620), 700)
+    namespace["fgoDevice"].device.perform.assert_not_called()
+    namespace["_advanceStory"].assert_not_called()
+
+
+def test_friend_request_retains_legacy_template_fallback():
+    namespace = load_definitions("fgoKernel.py", {"_dismissFriendRequest"}, {
+        "fgoDevice": MagicMock(), "logger": MagicMock(),
+    })
+    d = MagicMock()
+    d.locateFriendRequestEndButton.return_value = None
+    d.isAddFriend.return_value = True
+    assert namespace["_dismissFriendRequest"](d)
+    namespace["fgoDevice"].device.perform.assert_called_once_with("X", (300,))
+
+
+def test_missing_decide_button_does_not_start_battle(kernel):
+    d = MagicMock()
+    d.isBattleFormationRestriction.return_value = False
+    d.isAutoFormationPrompt.return_value = True
+    d.locateAutoFormationConfirmButton.return_value = (929, 604)
+    kernel["Detect"].return_value.locateFormationDecideButton.return_value = None
+    with pytest.raises(kernel["ScriptStop"], match="decide button not found"):
+        kernel["_startFormation"](d)
     kernel["fgoDevice"].device.touch.assert_called_once_with((929, 604))
+    kernel["_confirmBattleStart"].assert_not_called()
+
+
+@pytest.mark.parametrize("entry", ["_startFormation", "_advanceStory"])
+def test_restriction_is_resolved_before_generic_popup_dismissal(kernel, entry):
+    d = MagicMock()
+    d.isBattleFormationRestriction.return_value = True
+    kernel["_dismissPreBattlePopup"].return_value = True
+    kernel[entry](d)
+    kernel["_resolveFormationRestriction"].assert_called_once_with()
     kernel["_confirmBattleStart"].assert_called_once_with()
+    kernel["_dismissPreBattlePopup"].assert_not_called()
+
+
+@pytest.mark.parametrize("skip_story", [True, False])
+def test_restriction_without_visible_battle_button_routes_to_formation(skip_story):
+    namespace = load_definitions("fgoKernel.py", {"skipStoryToBattle"}, {
+        "time": MagicMock(), "schedule": MagicMock(), "Detect": MagicMock(),
+        "_startFormation": MagicMock(),
+    })
+    namespace["time"].time.return_value = 0
+    restriction, battle = MagicMock(), MagicMock()
+    restriction.isTurnBegin.return_value = False
+    restriction.isBattleFinished.return_value = False
+    restriction.isBattleDefeated.return_value = False
+    restriction.isChooseFriend.return_value = False
+    restriction.isMainInterface.return_value = False
+    restriction.isBattleContinue.return_value = False
+    restriction.isBattleFormation.return_value = False
+    restriction.isBattleFormationRestriction.return_value = True
+    battle.isTurnBegin.return_value = True
+    namespace["Detect"].side_effect = [restriction, battle]
+    assert namespace["skipStoryToBattle"](skip_story=skip_story) == "battle"
+    namespace["_startFormation"].assert_called_once_with(restriction)
+
+
+@pytest.mark.parametrize("close", [(639, 600), None])
+def test_formation_repair_requires_close_button_before_auto_party(close):
+    class ScriptStop(Exception):
+        pass
+
+    namespace = load_definitions("fgoKernel.py", {"_fixFormationRestriction"}, {
+        "logger": MagicMock(), "Detect": MagicMock(), "fgoDevice": MagicMock(),
+        "_useAutoFormation": MagicMock(), "ScriptStop": ScriptStop,
+    })
+    namespace["Detect"].return_value.locateFormationRestrictionCloseButton.return_value = close
+    if close:
+        namespace["_fixFormationRestriction"]()
+        namespace["fgoDevice"].device.touch.assert_called_once_with(close, 500)
+        namespace["_useAutoFormation"].assert_called_once_with()
+    else:
+        with pytest.raises(ScriptStop, match="close button not found"):
+            namespace["_fixFormationRestriction"]()
+        namespace["fgoDevice"].device.touch.assert_not_called()
+        namespace["_useAutoFormation"].assert_not_called()

@@ -536,6 +536,8 @@ def _advanceBattleResult(max_steps=10):
         d=Detect(0,.3)
         if d.isBattleContinue()or d.isMainInterface()or d.isBattleFormation()or d.isChooseFriend()or d.isTurnBegin():
             return
+        if _dismissFriendRequest(d):
+            continue
         fgoDevice.device.press(' ')
         schedule.sleep(.4)
 
@@ -561,7 +563,7 @@ def skipStoryToBattle(timeout_s=180, auto_select_support=True, support_name='', 
             continue
         if d.isMainInterface()or d.isBattleContinue():
             return 'done'
-        if d.isBattleFormation():
+        if d.isBattleFormationRestriction()or d.isAutoFormationPrompt()or d.isBattleFormation():
             _startFormation(d)
             continue
         if not skip_story:
@@ -576,8 +578,6 @@ def skipStoryToBattle(timeout_s=180, auto_select_support=True, support_name='', 
 
 def skipStoryAfterBattle(timeout_s=90, skip_story=True):
     """Advance result screens and skip any post-battle story that appears."""
-    if not skip_story:
-        return True
     deadline=time.time()+timeout_s
     logged=False
     while time.time()<deadline:
@@ -585,13 +585,35 @@ def skipStoryAfterBattle(timeout_s=90, skip_story=True):
         d=Detect(0,.3)
         if d.isMainInterface()or d.isBattleContinue()or d.isBattleFormation()or d.isChooseFriend()or d.isTurnBegin():
             return True
+        if _dismissFriendRequest(d):
+            continue
+        if not skip_story:
+            if d.isStorySkip()or d.locateStorySkipConfirmButton():
+                return True
+            fgoDevice.device.perform(' ',(700,))
+            continue
         if not logged:
             logger.info('Skipping story/dialog after auto battle')
             logged=True
         _advanceStory(d)
     return False
 
+def _dismissFriendRequest(d):
+    if pos:=d.locateFriendRequestEndButton():
+        logger.info('Ending support friend request without sending an application')
+        fgoDevice.device.touch(pos,700)
+        return True
+    if d.isAddFriend():
+        fgoDevice.device.perform('X',(300,))
+        return True
+    return False
+
 def _advanceStory(d):
+    if _dismissFriendRequest(d):
+        return
+    if d.isBattleFormationRestriction():
+        _startFormation(d)
+        return
     if _dismissPreBattlePopup(d):
         return
     if d.isAutoFormationPrompt():
@@ -602,8 +624,6 @@ def _advanceStory(d):
         return
     if d.isStorySkip():
         _skipStory()
-    elif d.isAddFriend():
-        fgoDevice.device.perform('X',(300,))
     elif d.isSpecialDropSuspended():
         fgoDevice.device.perform('\x1B',(300,))
     else:
@@ -614,11 +634,11 @@ def _skipStory():
     fgoDevice.device.touch((827,562),700)
 
 def _startFormation(d):
-    if _dismissPreBattlePopup(d):
-        return
     if d.isBattleFormationRestriction():
         _resolveFormationRestriction()
         _confirmBattleStart()
+    elif _dismissPreBattlePopup(d):
+        return
     elif d.isAutoFormationPrompt():
         _useAutoFormation(d)
         _confirmBattleStart()
@@ -713,6 +733,10 @@ def _useAutoFormation(d=None):
         raise ScriptStop('Auto formation confirmation button not found')
     fgoDevice.device.touch(pos)
     schedule.sleep(1.5)
+    d=Detect(0,.3)
+    if not(pos:=d.locateFormationDecideButton()):
+        raise ScriptStop('Formation decide button not found after auto formation')
+    fgoDevice.device.touch(pos,1000)
 
 def _confirmBattleStart():
     fgoDevice.device.perform(' M ',(2000,2000,10000))
@@ -756,7 +780,10 @@ def findNextChapter(timeout_s=30,steps=2,target_offset_y=130,settle_ms=1200,on_p
 
 def _fixFormationRestriction():
     logger.info('Formation restriction detected; closing modal and using auto formation')
-    fgoDevice.device.perform('Z',(500,))
+    d=Detect(0,.3)
+    if not(pos:=d.locateFormationRestrictionCloseButton()):
+        raise ScriptStop('Formation restriction close button not found')
+    fgoDevice.device.touch(pos,500)
     _useAutoFormation()
 
 def _resolveFormationRestriction(maxAttempts=3):
@@ -821,8 +848,8 @@ class Main:
                     fgoDevice.device.press('J')
                     return logger.info('No Storm Pot')
                 elif Detect.cache.isTurnBegin():break
+                elif _dismissFriendRequest(Detect.cache):continue
                 elif _dismissPreBattlePopup(Detect.cache):continue
-                elif Detect.cache.isAddFriend():fgoDevice.device.perform('X',(300,))
                 elif Detect.cache.isSpecialDropSuspended():fgoDevice.device.perform('\x1B',(300,))
                 fgoDevice.device.press('\xBB')
             self.battleCount+=1

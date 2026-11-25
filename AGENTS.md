@@ -106,6 +106,8 @@ deploy/              # Deployment scripts
 11. **FGO-py web server must start without emulator** — `LDPlayerDevice.__init__` raises `RuntimeError` when emulator is offline. Wrap in try/catch and store `_pending_device_name` for lazy reconnection. The web server and task queue should work even without a connected device.
 12. **`eat_apple` is not a standalone task** — Apple consumption only works mid-operation when the game prompts for AP recovery. It's a parameter on `operation` tasks (`apple_total`, `apple_kind`), not an independent task type.
 13. **`launch_game` needs a running emulator and handles CN startup popups** — Always sequence `launch_game` *after* `start_emulator` so `_wait_and_reconnect()` has restored the device. The task automates CADPA splash → login tap → 资料更新 resource-update start → close/cancel startup popups → main menu. Full client APK updates still require manual install. See design log 010.
+14. **Formation conditions are not generic popups** — CN uses `编成条件` as well as restriction headings. Auto-battle must resolve these dialogs before generic dismissal or battle-start taps, even with story skipping disabled. Locate the dialog's close label with OCR, use auto formation, then explicitly tap `决定` to save the party before starting battle; the startup-popup close template does not match every formation dialog.
+15. **Friend requests are battle cleanup, not story** — After using non-friend support, dismiss the friend-request page with `结束` without applying. Match the request heading and end-button OCR when the legacy template fails, and perform this cleanup even when story skipping is disabled.
 
 ## Design Logs
 
