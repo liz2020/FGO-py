@@ -34,6 +34,7 @@ class List:
                     return
                 raise RuntimeError(f'Navigation node {self.name} not found after {scrolls} scrolls')
 class OrdealChapter(List):
+    MAX_TRANSITION_CHECKS=20
     def _findEntry(self):
         # The current CN scrollbar differs from the legacy list-begin template.
         for begin,end in(((1000,200),(1000,600)),((1000,600),(1000,200))):
@@ -46,14 +47,19 @@ class OrdealChapter(List):
                 previous=view.copy()
                 fgoDevice.device.swipe(begin,end,800)
         raise RuntimeError(f'Navigation node {self.name} not found in the terminal chapter list')
+    def _waitPage(self,earth):
+        for _ in range(self.MAX_TRANSITION_CHECKS):
+            d=Detect(.5)
+            if not d.isMainInterface():continue
+            if earth:
+                if d.isOrdealEarth()and(pos:=d.findChapter(self.name)):return pos
+            elif not d.isOrdealEarth()and d.findChapter(self.name)is None:return
+        if earth:raise RuntimeError(f'Chapter banner {self.name} not found on white Earth after waiting for entry')
+        raise RuntimeError(f'Chapter {self.name} map did not open after selecting its white-Earth banner')
     def __call__(self):
-        fgoDevice.device.touch(self._findEntry())
-        schedule.sleep(1)
-        pos=Detect(1).findChapter(self.name)
-        if pos is None:
-            raise RuntimeError(f'Chapter banner {self.name} not found on white Earth')
-        fgoDevice.device.touch(pos)
-        schedule.sleep(1)
+        if not Detect(.4).isOrdealEarth():fgoDevice.device.touch(self._findEntry())
+        fgoDevice.device.touch(self._waitPage(True))
+        self._waitPage(False)
 class Map:
     hideNames=True
     poly=numpy.array([(230,40),(230,200),(40,200),(40,450),(150,450),(220,520),(630,520),(630,680),(980,680),(980,570),(1240,570),(1240,40)])

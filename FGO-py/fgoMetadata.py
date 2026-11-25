@@ -683,7 +683,13 @@ materialImg=[(i[:-4],cv2.imread(f'fgoImage/material/{i}'))for i in os.listdir('f
 chapterImg={tuple(int(i)for i in i[:-4].split('-')):cv2.imread(f'fgoImage/map/entrance/{i}')for i in os.listdir('fgoImage/map/entrance')}
 mapImg={tuple(int(i)for i in i[:-4].split('-')):cv2.imread(f'fgoImage/map/atlas/{i}')for i in os.listdir('fgoImage/map/atlas')}
 # A fourth filename component identifies an optional visible-marker variant.
-mapLandmarkImg={tuple(int(i)for i in i[:-4].split('-')):(lambda img:(img[...,:3],img[...,3]))(cv2.imread(f'fgoImage/map/landmark/{i}',cv2.IMREAD_UNCHANGED))for i in os.listdir('fgoImage/map/landmark')}
+def _readMapLandmark(file):
+    img=cv2.imread(file,cv2.IMREAD_UNCHANGED)
+    mask=img[...,3].copy()
+    # The progress badge changes count and disappears after clearing the node.
+    mask[20:110,95:]=0
+    return(img[...,:3],mask)
+mapLandmarkImg={tuple(int(i)for i in i[:-4].split('-')):_readMapLandmark(f'fgoImage/map/landmark/{i}')for i in os.listdir('fgoImage/map/landmark')}
 # Identical sprites at different nodes cannot establish a camera position.
 mapLandmarkImg={name:img for name,img in mapLandmarkImg.items()if sum(numpy.array_equal(img[0],other[0])and numpy.array_equal(img[1],other[1])for key,other in mapLandmarkImg.items()if key[:2]==name[:2])==1}
 questImg={int(i[:-4]):cv2.imread(f'fgoImage/map/{i}')for i in os.listdir('fgoImage/map')if i.endswith('.png')}

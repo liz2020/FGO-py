@@ -221,6 +221,7 @@ class XDetectBase(metaclass=logMeta(logger)):
     def isSynthesisBegin(self):return self._compare(self.tmpl.SYNTHESIS,(16,12,112,73))
     def isSynthesisFinished(self):return self._compare(self.tmpl.DECIDEDISABLED,(1035,625,1275,711))
     def isTerminal(self):return numpy.mean(self._crop((111,571,162,610)))<100
+    def isOrdealEarth(self):return re.sub(r'[^A-Z]','',OCR.EN.ocrText(self._crop((1020,0,1280,65))).upper())=='ORDEALCALL'
     def isTurnBegin(self):return self._compare(self.tmpl.ATTACK,(1155,635,1210,682))
     def isWeeklyMission(self):return numpy.min(cv2.matchTemplate(servantImg[1][1][3][0],cv2.resize(self._crop((296,117,421,210)),(0,0),fx=.555,fy=.555,interpolation=cv2.INTER_CUBIC),cv2.TM_SQDIFF_NORMED))<.1
     def isWeeklyMissionListEnd(self):return self._isListEnd((1261,614))
@@ -270,6 +271,8 @@ class XDetectBase(metaclass=logMeta(logger)):
     def findMail(self,img):return self._find(img,(73,166,920,720),.017)
     def findNextMarker(self,rect=(0,0,1280,720)):return self._find(self.tmpl.NEXTMARKER,rect,.13)
     def findMapCamera(self,chapter):
+        if chapter in((5,2),(5,3),(5,4))and self.isOrdealEarth():
+            raise RuntimeError(f'Chapter {chapter} is still on white Earth, not its quest map')
         score,_,pos,_=cv2.minMaxLoc(cv2.matchTemplate(mapImg[chapter],cv2.resize(self._crop((200,200,1080,520)),(0,0),fx=.3,fy=.3,interpolation=cv2.INTER_CUBIC),cv2.TM_SQDIFF_NORMED))
         if chapter in((5,2),(5,3),(5,4))and score>.15:
             # Large chapter scenery overlays can obscure the background texture.

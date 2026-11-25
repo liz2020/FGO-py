@@ -56,9 +56,10 @@ def ordeal_metadata(monkeypatch):
     tree = ast.parse((ROOT / "fgoMetadata.py").read_text(encoding="utf-8"))
     selected = [
         node for node in tree.body
-        if isinstance(node, ast.Assign)
-        and any(isinstance(t, ast.Name) and t.id in {"ordealMapNodes", "mapLandmarkImg"}
-                for t in node.targets)
+        if (isinstance(node, ast.Assign)
+            and any(isinstance(t, ast.Name) and t.id in {"ordealMapNodes", "mapLandmarkImg"}
+                    for t in node.targets))
+        or (isinstance(node, ast.FunctionDef) and node.name == "_readMapLandmark")
     ]
     namespace = {"cv2": cv2, "numpy": numpy, "os": os}
     monkeypatch.chdir(ROOT)
@@ -89,13 +90,14 @@ def navigation(ordeal_metadata, map_not_found_error):
 def detector(ordeal_metadata, map_not_found_error):
     tree = ast.parse((ROOT / "fgoDetect.py").read_text(encoding="utf-8"))
     base = next(n for n in tree.body if isinstance(n, ast.ClassDef) and n.name == "XDetectBase")
-    names = {"_crop", "_loc", "findMapCamera"}
+    names = {"_crop", "_loc", "findMapCamera", "isOrdealEarth"}
     selected = [n for n in base.body if isinstance(n, ast.FunctionDef) and n.name in names]
     namespace = {
         "cv2": cv2, "numpy": numpy,
         "ordealMapNodes": ordeal_metadata["ordealMapNodes"],
         "mapLandmarkImg": ordeal_metadata["mapLandmarkImg"],
         "MapNotFoundError": map_not_found_error,
+        "re": re, "OCR": SimpleNamespace(EN=SimpleNamespace(ocrText=Mock(return_value=""))),
         "mapImg": {(5, c): cv2.imread(str(ROOT / "fgoImage" / "map" / "atlas" / f"5-{c}.png"))
                    for c in (2, 3, 4)},
     }
@@ -168,10 +170,12 @@ def test_existing_paper_moon_navigation_is_preserved(navigation):
 
 
 def test_chapter_scrolls_then_clicks_matching_banner_again_on_world(navigation):
-    locations = iter([None, None, (730, 200), (730, 160)])
+    locations = iter([None, None, (730, 200), (730, 160), None])
+    earth = iter([False, True, False])
     frames = iter([numpy.zeros((10, 10, 3), numpy.uint8), numpy.full((10, 10, 3), 10, numpy.uint8)])
     detect = SimpleNamespace(
         isMainInterface=lambda: True, isQuestListBegin=lambda: True,
+        isOrdealEarth=lambda: next(earth),
         findChapter=lambda name: next(locations),
         _crop=lambda rect: next(frames),
     )
@@ -185,9 +189,11 @@ def test_chapter_scrolls_then_clicks_matching_banner_again_on_world(navigation):
 
 
 def test_new_chapter_search_reverses_when_the_top_of_the_list_is_reached(navigation):
-    locations = iter([None, None, None, (730, 200), (730, 160)])
+    locations = iter([None, None, None, (730, 200), (730, 160), None])
+    earth = iter([False, True, False])
     navigation["Detect"].return_value = SimpleNamespace(
         isMainInterface=lambda: True,
+        isOrdealEarth=lambda: next(earth),
         findChapter=lambda name: next(locations),
         _crop=lambda rect: numpy.zeros((10, 10, 3), numpy.uint8),
     )
@@ -199,13 +205,71 @@ def test_new_chapter_search_reverses_when_the_top_of_the_list_is_reached(navigat
 
 def test_missing_world_banner_fails_without_blind_second_tap(navigation):
     locations = iter([(730, 200), None])
+    earth = iter([False] + [True] * 20)
     navigation["Detect"].return_value = SimpleNamespace(
         isMainInterface=lambda: True, isQuestListBegin=lambda: True,
-        findChapter=lambda name: next(locations),
+        isOrdealEarth=lambda: next(earth),
+        findChapter=lambda name: next(locations, None),
     )
     with pytest.raises(RuntimeError, match="not found on white Earth"):
         navigation["OrdealChapter"]((5, 2))()
     navigation["fgoDevice"].device.touch.assert_called_once_with((730, 200))
+
+
+def test_chapter_waits_for_slow_earth_and_map_transitions(navigation):
+    locations = iter([(730, 200), (730, 160), None])
+    earth = iter([False, False, False, True, True, False])
+    navigation["Detect"].return_value = SimpleNamespace(
+        isMainInterface=lambda: True, isOrdealEarth=lambda: next(earth),
+        findChapter=lambda name: next(locations),
+    )
+    navigation["OrdealChapter"]((5, 2))()
+    assert navigation["fgoDevice"].device.touch.call_args_list == [
+        call((730, 200)), call((730, 160)),
+    ]
+    navigation["fgoDevice"].device.swipe.assert_not_called()
+
+
+def test_chapter_can_resume_on_earth_without_repeating_terminal_click(navigation):
+    locations = iter([(730, 160), None])
+    earth = iter([True, True, False])
+    navigation["Detect"].return_value = SimpleNamespace(
+        isMainInterface=lambda: True, isOrdealEarth=lambda: next(earth),
+        findChapter=lambda name: next(locations),
+    )
+    navigation["OrdealChapter"]((5, 2))()
+    navigation["fgoDevice"].device.touch.assert_called_once_with((730, 160))
+
+
+def test_chapter_stops_when_second_click_does_not_open_map(navigation):
+    locations = iter([(730, 200), (730, 160)])
+    earth = iter([False] + [True] * 21)
+    navigation["Detect"].return_value = SimpleNamespace(
+        isMainInterface=lambda: True, isOrdealEarth=lambda: next(earth),
+        findChapter=lambda name: next(locations),
+    )
+    with pytest.raises(RuntimeError, match="map did not open"):
+        navigation["OrdealChapter"]((5, 2))()
+    assert navigation["fgoDevice"].device.touch.call_count == 2
+    navigation["fgoDevice"].device.swipe.assert_not_called()
+
+
+@pytest.mark.parametrize("title,expected", [
+    ("-Ordeal Call", True), ("Ordeal Call II", False), ("交换道具", False),
+])
+def test_earth_title_is_distinct_from_chapter_and_terminal_titles(detector, title, expected):
+    detector.im = numpy.zeros((720, 1280, 3), dtype=numpy.uint8)
+    namespace = detector.isOrdealEarth.__func__.__globals__
+    namespace["OCR"].EN.ocrText.return_value = title
+    assert detector.isOrdealEarth() is expected
+
+
+def test_white_earth_is_rejected_before_map_matching(detector):
+    namespace = detector.findMapCamera.__func__.__globals__
+    namespace["OCR"].EN.ocrText.return_value = "Ordeal Call"
+    detector.im = numpy.zeros((720, 1280, 3), dtype=numpy.uint8)
+    with pytest.raises(RuntimeError, match="still on white Earth"):
+        detector.findMapCamera((5, 2))
 
 
 def test_live_map_crop_localizes_school_and_market_at_clickable_positions(detector, navigation):
@@ -240,6 +304,32 @@ def test_live_scenery_overlays_use_unique_landmarks(detector, chapter, filename,
     detector.im[100:100 + crop.shape[0], 200:1080] = crop
     camera = detector.findMapCamera((5, chapter))
     assert numpy.linalg.norm(camera - expected) < 4
+
+
+@pytest.mark.parametrize("chapter,filename,expected", [
+    (3, "ordeal-iii-marked-map.png", (1282.5, 2122)),
+    (4, "ordeal-iv-horizontal-map.png", (1240.5, 3830)),
+])
+@pytest.mark.parametrize("counter", [2, 4, None])
+def test_landmark_match_ignores_changed_or_removed_progress_badge(detector, chapter, filename, expected, counter):
+    detector.im = numpy.zeros((720, 1280, 3), dtype=numpy.uint8)
+    crop = cv2.imread(str(Path(__file__).parent / "fixtures" / filename))
+    detector.im[100:100 + crop.shape[0], 200:1080] = crop
+    namespace = detector.findMapCamera.__func__.__globals__
+    image = namespace["mapLandmarkImg"][(5, chapter, 11, 1)]
+    before, _, pos, _ = detector._loc(image, (200, 100, 1080, 600))
+    x, y = pos[0] + 200, pos[1] + 100
+    native = namespace["mapLandmarkImg"][(5, chapter, 11)][0]
+    detector.im[y + 20:y + 110, x + 95:x + 160] = native[20:110, 95:160]
+    if counter is not None:
+        cv2.circle(detector.im, (x + 126, y + 60), 22, (255, 255, 255), -1)
+        cv2.circle(detector.im, (x + 126, y + 60), 20, (20, 80, 190), -1)
+        cv2.putText(detector.im, str(counter), (x + 118, y + 68), cv2.FONT_HERSHEY_SIMPLEX,
+                    .65, (255, 255, 255), 2)
+    after, _, new_pos, _ = detector._loc(image, (200, 100, 1080, 600))
+    assert new_pos == pos
+    assert abs(after - before) < 1e-5
+    assert numpy.linalg.norm(detector.findMapCamera((5, chapter)) - expected) < 4
 
 
 def test_conflicting_landmark_matches_reject_the_map(detector, monkeypatch):

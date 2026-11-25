@@ -87,11 +87,15 @@ Park free quest first (幻想巡游 / 幻想パレード).
 Navigation scrolls the terminal's right-hand chapter list, selects the chapter
 banner to enter white Earth, then selects the same banner in its right sidebar
 to open the chapter map.
+Each click waits for the corresponding page transition; the white-Earth page
+is explicitly rejected by chapter-map localization.
 Use Menu -> Terminal to return directly to the chapter list.
 New chapter maps use short, slow drags followed by camera localization, with
 unique quest landmarks as a fallback when large scenery overlays obscure the
 background. Names remain visible. Ambiguous or persistently unrecognized maps stop navigation rather than tapping
 an estimated quest position.
+Progress-counter badges are masked out of landmark matching, including after
+their numbers change or disappear upon clearing the node.
 
 The four school free quests share one map node and use distinct subquest indices.
 The fourth entry is scrolled into view and selected by its localized CN/JP title;
