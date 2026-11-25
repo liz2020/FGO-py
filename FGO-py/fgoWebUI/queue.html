@@ -595,6 +595,51 @@
         </ul>
     </div>
 
+    <!-- Add Task (system-level tasks) -->
+    <div class="section">
+        <h3>Add Task</h3>
+        <div class="form-row">
+            <label>Task</label>
+            <select id="selTaskType" onchange="onTaskTypeChange()">
+                <option value="auto_main_story">自动过主线</option>
+                <option value="wait">Wait</option>
+                <option value="find_next_chapter">Find Next Chapter</option>
+                <option value="start_auto_battle">Start Auto Battle</option>
+                <option value="stop_emulator">Stop Emulator</option>
+                <option value="start_emulator">Start Emulator</option>
+                <option value="launch_game">Launch Game</option>
+                <option value="loop">Loop (Repeat Group)</option>
+                <option value="friend_points">Friend Points</option>
+            </select>
+        </div>
+        <div class="form-row" id="taskParamWait">
+            <label>Minutes</label>
+            <input type="number" id="inputWaitMinutes" value="30" min="1" max="9999">
+        </div>
+        <div class="form-row" id="taskParamLaunchGame" style="display:none">
+            <label>Timeout (s)</label>
+            <input type="number" id="inputLaunchGameTimeout" value="200" min="30" max="1800">
+        </div>
+        <div id="taskParamLoop" style="display:none">
+            <div class="form-row">
+                <label>Repeat</label>
+                <input type="number" id="inputLoopCount" value="3" min="1" max="999" style="width:60px">
+            </div>
+            <div class="form-check">
+                <input type="checkbox" id="chkLoopInfinite" onchange="document.getElementById('inputLoopCount').disabled = this.checked">
+                <label for="chkLoopInfinite">Infinite</label>
+            </div>
+            <div style="font-size:0.75rem; color:var(--text-dim); margin-top:4px">
+                Add tasks to the loop after creating it by dragging them in, or use the Add Task / Add Quest sections.
+            </div>
+        </div>
+        <div class="form-row" id="taskParamFriendPoints" style="display:none">
+            <label>Repeat</label>
+            <input type="number" id="inputFriendPointsRepeat" value="10" min="1" max="999" style="width:60px">
+        </div>
+        <button class="btn-add" onclick="addTaskToQueue()">+ Add to Queue</button>
+    </div>
+
     <!-- Quest Selector -->
     <div class="section">
         <h3>Add Quest</h3>
@@ -630,50 +675,6 @@
             <label for="chkNormalAttack">仅使用普通攻击</label>
         </div>
         <button class="btn-add" onclick="addToQueue()">+ Add to Queue</button>
-    </div>
-
-    <!-- Add Task (system-level tasks) -->
-    <div class="section">
-        <h3>Add Task</h3>
-        <div class="form-row">
-            <label>Task</label>
-            <select id="selTaskType" onchange="onTaskTypeChange()">
-                <option value="wait">Wait</option>
-                <option value="find_next_chapter">Find Next Chapter</option>
-                <option value="start_auto_battle">Start Auto Battle</option>
-                <option value="stop_emulator">Stop Emulator</option>
-                <option value="start_emulator">Start Emulator</option>
-                <option value="launch_game">Launch Game</option>
-                <option value="loop">Loop (Repeat Group)</option>
-                <option value="friend_points">Friend Points</option>
-            </select>
-        </div>
-        <div class="form-row" id="taskParamWait">
-            <label>Minutes</label>
-            <input type="number" id="inputWaitMinutes" value="30" min="1" max="9999">
-        </div>
-        <div class="form-row" id="taskParamLaunchGame" style="display:none">
-            <label>Timeout (s)</label>
-            <input type="number" id="inputLaunchGameTimeout" value="200" min="30" max="1800">
-        </div>
-        <div id="taskParamLoop" style="display:none">
-            <div class="form-row">
-                <label>Repeat</label>
-                <input type="number" id="inputLoopCount" value="3" min="1" max="999" style="width:60px">
-            </div>
-            <div class="form-check">
-                <input type="checkbox" id="chkLoopInfinite" onchange="document.getElementById('inputLoopCount').disabled = this.checked">
-                <label for="chkLoopInfinite">Infinite</label>
-            </div>
-            <div style="font-size:0.75rem; color:var(--text-dim); margin-top:4px">
-                Add tasks to the loop after creating it by dragging them in, or use the Add Quest / Add Task sections above.
-            </div>
-        </div>
-        <div class="form-row" id="taskParamFriendPoints" style="display:none">
-            <label>Repeat</label>
-            <input type="number" id="inputFriendPointsRepeat" value="10" min="1" max="999" style="width:60px">
-        </div>
-        <button class="btn-add" onclick="addTaskToQueue()">+ Add to Queue</button>
     </div>
 
 <script>
@@ -1084,7 +1085,7 @@ async function addTaskToQueue() {
         params.timeout_s = parseInt(document.getElementById('inputLaunchGameTimeout').value) || 200;
     } else if (type === 'find_next_chapter') {
         params = { timeout_s: 30, steps: 2, target_offset_y: 130, settle_ms: 1200 };
-    } else if (type === 'start_auto_battle') {
+    } else if (type === 'start_auto_battle' || type === 'auto_main_story') {
         const supportName = document.getElementById('inputSupportName').value.trim();
         params = {
             auto_select_support: document.getElementById('chkAutoSelectSupport').checked,
@@ -1093,6 +1094,13 @@ async function addTaskToQueue() {
             idle_action_delay_s: Math.max(0, parseFloat(document.getElementById('inputIdleActionDelay').value) || 0),
         };
         if (supportName) params.support_name = supportName;
+        if (type === 'auto_main_story') {
+            children = [
+                { type: 'find_next_chapter', params: { timeout_s: 30, steps: 2, target_offset_y: 130, settle_ms: 1200 } },
+                { type: 'start_auto_battle', params },
+            ];
+            params = { remaining: 3, infinite: true };
+        }
     } else if (type === 'loop') {
         const infinite = document.getElementById('chkLoopInfinite').checked;
         const remaining = parseInt(document.getElementById('inputLoopCount').value) || 3;
@@ -1122,8 +1130,9 @@ async function addTaskToQueue() {
         ];
     }
     try {
-        const body = { type: type === 'friend_points' ? 'loop' : type, params };
-        if (type === 'loop' || type === 'friend_points') body.children = children;
+        const isLoop = ['loop', 'friend_points', 'auto_main_story'].includes(type);
+        const body = { type: isLoop ? 'loop' : type, params };
+        if (isLoop) body.children = children;
         await fetch(`${API}/api/queue`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -1638,6 +1647,7 @@ function preventContext(e) { e.preventDefault(); }
 function clearPointerState() { pointerState = null; }
 
 // --- Init ---
+onTaskTypeChange();
 connectWS();
 fetchCatalog();
 fetchState();

@@ -97,7 +97,17 @@ class XDetectBase(metaclass=logMeta(logger)):
         XDetectBase._watchServantFriend=[self._asyncValueChange(self.isServantFriend(i)if friend is None else friend[i])for i in range(3)]
     def setupSummonHistory(self):XDetectBase._summonHistory=cv2.threshold(cv2.cvtColor(self._crop((147,157,1105,547)),cv2.COLOR_BGR2GRAY),128,255,cv2.THRESH_BINARY)[1]
     def setupWeeklyMission(self):XDetectBase._weeklyMission=self._crop((603,250,1092,710))
-    def isAddFriend(self):return self._compare(self.tmpl.ADDFRIEND,(70,560,430,670))
+    def isAddFriend(self):return self._compare(self.tmpl.ADDFRIEND,(70,560,430,670))or self.locateFriendRequestEndButton()is not None
+    def locateFriendRequestEndButton(self):
+        text=re.sub(r'\s+','',''.join(self.ocr.ocrArea(self._crop((350,145,930,255))))).upper()
+        if not any(label in text for label in('好友申请','好友申請','フレンド申請','FRIENDREQUEST')):
+            return None
+        rect=(100,560,520,670)
+        for result in self.ocr.detect_and_ocr(self._crop(rect)):
+            if re.sub(r'\s+','',result.text).upper()in{'结束','結束','終了','END','FINISH'}:
+                center=numpy.mean(result.box,axis=0)
+                return(int(center[0])+rect[0],int(center[1])+rect[1])
+        return None
     def isApEmpty(self):return self._compare(self.tmpl.APEMPTY,(522,582,758,652))
     def isAutoFormationPrompt(self):
         try:text=''.join(self.ocr.ocrArea(self._crop((280,35,1000,140)))).upper()
@@ -111,15 +121,34 @@ class XDetectBase(metaclass=logMeta(logger)):
                 center=numpy.mean(result.box,axis=0)
                 return(int(center[0])+rect[0],int(center[1])+rect[1])
         return None
+    def locateFormationDecideButton(self):
+        rect=(1060,620,1270,710)
+        labels={'决定','決定','CONFIRM','DONE'}
+        for result in self.ocr.detect_and_ocr(self._crop(rect)):
+            if re.sub(r'\s+','',result.text).upper()in labels:
+                center=numpy.mean(result.box,axis=0)
+                return(int(center[0])+rect[0],int(center[1])+rect[1])
+        return None
     def isBattleFormationRestriction(self):
-        try:text=''.join(self.ocr.ocrArea(self._crop((450,70,850,340)))).upper()
+        try:text=re.sub(r'\s+','',''.join(self.ocr.ocrArea(self._crop((450,70,850,340))))).upper()
         except(TypeError,ValueError,IndexError):return False
         return(
             '编制限制'in text
             or'编成限制'in text
+            or'编成条件'in text
             or'編成制限'in text
-            or('FORMATION'in text and('RESTRICTION'in text or'RESTRICT'in text))
+            or'編成条件'in text
+            or'編成條件'in text
+            or('FORMATION'in text and('RESTRICTION'in text or'RESTRICT'in text or'CONDITION'in text))
         )
+    def locateFormationRestrictionCloseButton(self):
+        rect=(450,500,830,650)
+        labels={'关闭','關閉','閉じる','CLOSE'}
+        for result in self.ocr.detect_and_ocr(self._crop(rect)):
+            if re.sub(r'\s+','',result.text).upper()in labels:
+                center=numpy.mean(result.box,axis=0)
+                return(int(center[0])+rect[0],int(center[1])+rect[1])
+        return None
     def locateBattleWarningStartButton(self):
         modal=self._crop((450,220,850,420))
         button=self._crop((700,520,990,610))
