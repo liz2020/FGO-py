@@ -48,12 +48,16 @@ class OrdealChapter(List):
                 fgoDevice.device.swipe(begin,end,800)
         raise RuntimeError(f'Navigation node {self.name} not found in the terminal chapter list')
     def _waitPage(self,earth):
-        for _ in range(self.MAX_TRANSITION_CHECKS):
+        for check in range(self.MAX_TRANSITION_CHECKS):
             d=Detect(.5)
             if not d.isMainInterface():continue
-            if earth:
-                if d.isOrdealEarth()and(pos:=d.findChapter(self.name)):return pos
-            elif not d.isOrdealEarth()and d.findChapter(self.name)is None:return
+            if d.isOrdealEarth()==earth:
+                if earth:
+                    if pos:=d.findChapter(self.name):return pos
+                elif d.findChapter(self.name)is None:return
+            elif(check+1)%4==0 and check+1<self.MAX_TRANSITION_CHECKS and(pos:=d.findChapter(self.name)):
+                logger.warning(f'Chapter {self.name} entry has not changed pages; retrying its visible banner')
+                fgoDevice.device.touch(pos)
         if earth:raise RuntimeError(f'Chapter banner {self.name} not found on white Earth after waiting for entry')
         raise RuntimeError(f'Chapter {self.name} map did not open after selecting its white-Earth banner')
     def __call__(self):

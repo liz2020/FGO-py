@@ -89,6 +89,9 @@ banner to enter white Earth, then selects the same banner in its right sidebar
 to open the chapter map.
 Each click waits for the corresponding page transition; the white-Earth page
 is explicitly rejected by chapter-map localization.
+If a visible banner is not yet accepting input after returning to the terminal,
+navigation retries at two-second polling intervals only while that banner remains
+on the original page, with at most four retries per transition.
 Use Menu -> Terminal to return directly to the chapter list.
 New chapter maps use short, slow drags followed by camera localization, with
 unique quest landmarks as a fallback when large scenery overlays obscure the
