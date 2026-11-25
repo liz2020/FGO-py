@@ -81,7 +81,7 @@ def setup():
         fgoDevice.device.press('\x08')
     elif False:...
 
-def launchGame(timeout_s=200,on_progress=None):
+def launchGame(timeout_s=300,on_progress=None):
     """Launch FGO via ldconsole and drive it from any pre-login screen to the main interface.
 
     Handled states:
@@ -794,6 +794,26 @@ def _resolveFormationRestriction(maxAttempts=3):
             return
     raise ScriptStop('Formation restriction could not be resolved with auto formation')
 
+def _selectQuest(questIndex,quest=None):
+    if questIndex in range(3):return fgoDevice.device.press('84L'[questIndex])
+    if questIndex!=3:raise ValueError(f'Unsupported free-quest index: {questIndex}')
+    if quest is None or len(quest)!=4 or quest[-1]!=questIndex:
+        raise ValueError('Fourth free-quest selection requires its full matching quest tuple')
+    from fgoQuestCatalog import _parse_i18n
+    lang={'CN':'zh','JP':'ja'}.get(XDetect.region)
+    if lang is None:raise ScriptStop(f'Fourth free-quest title is unavailable for region {XDetect.region}')
+    title=_parse_i18n(lang).get('-'.join(map(str,quest)),'').partition(' / ')[2]
+    if not title:raise ScriptStop(f'Localized free-quest title not found for {quest}')
+    for attempt in range(7):
+        d=Detect(.8)
+        if not d.isMainInterface()or not d.isQuestFreeContains(quest[0]):
+            raise ScriptStop(f'Free-quest list is not visible for {quest}')
+        if pos:=d.locateQuestName(title):
+            logger.info(f'Selecting free quest {quest}: {title}')
+            return fgoDevice.device.touch(pos)
+        if attempt<6:fgoDevice.device.swipe((1000,550),(1000,300),800)
+    raise ScriptStop(f'Free quest {quest} ({title}) not found after scrolling; check its unlock requirements')
+
 class Main:
     teamIndex=0
     autoFormation=False
@@ -802,15 +822,15 @@ class Main:
         self.appleKind=appleKind
         self.battleClass=battleClass
     @serialize(mutex)
-    def __call__(self,questIndex=0,battleTotal=None):
+    def __call__(self,questIndex=0,battleTotal=None,quest=None):
         self.prepare()
         while True:
             self.battleProc=self.battleClass()
             while True:
                 if Detect(.3,.3).isMainInterface():
                     if self.battleCount==battleTotal:return logger.info('Operation Unit Completed')
-                    fgoDevice.device.press('84L'[questIndex])
-                    questIndex=0
+                    _selectQuest(questIndex,quest)
+                    if questIndex<3:questIndex=0
                     if Detect(1.2).isBattleContinue():fgoDevice.device.press('K')
                     elif Detect.cache.isSkillCastFailed():
                         fgoDevice.device.press('J')
@@ -935,5 +955,5 @@ class Operation(list,Main):
             quest,times=self[0]
             del self[0]
             goto(quest)
-            super().__call__(quest[-1],self.battleCount+times if times else None)
+            super().__call__(quest[-1],self.battleCount+times if times else None,quest=quest)
     def prepare(self):pass

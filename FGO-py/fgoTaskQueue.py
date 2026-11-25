@@ -519,7 +519,7 @@ class TaskWorker(threading.Thread):
                 m.eatApple()
                 return {"apple_kind": apple_kind}
             case "launch_game":
-                timeout_s = int(task.params.get("timeout_s", 200))
+                timeout_s = int(task.params.get("timeout_s", 300))
                 logger.info(f"Launching game (timeout={timeout_s}s)")
                 _state_detail = {
                     "launching": "Launching FGO...",

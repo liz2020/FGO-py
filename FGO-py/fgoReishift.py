@@ -1,7 +1,8 @@
 import cv2,numpy
 import fgoDevice
-from fgoDetect import Detect
+from fgoDetect import Detect,MapNotFoundError
 from fgoLogging import getLogger
+from fgoMetadata import ordealMapNodes
 from fgoSchedule import schedule
 logger=getLogger('Reishift')
 
@@ -32,18 +33,85 @@ class List:
                     logger.info(f'Optional node {self.name} not found after {scrolls} scrolls, skipping')
                     return
                 raise RuntimeError(f'Navigation node {self.name} not found after {scrolls} scrolls')
+class OrdealChapter(List):
+    MAX_TRANSITION_CHECKS=20
+    def _findEntry(self):
+        # The current CN scrollbar differs from the legacy list-begin template.
+        for begin,end in(((1000,200),(1000,600)),((1000,600),(1000,200))):
+            previous=None
+            for _ in range(self.MAX_SCROLLS):
+                while not(d:=Detect(.4)).isMainInterface():pass
+                if pos:=d.findChapter(self.name):return pos
+                view=d._crop((640,90,1230,600))
+                if previous is not None and numpy.mean(cv2.absdiff(view,previous))<2:break
+                previous=view.copy()
+                fgoDevice.device.swipe(begin,end,800)
+        raise RuntimeError(f'Navigation node {self.name} not found in the terminal chapter list')
+    def _waitPage(self,earth):
+        for _ in range(self.MAX_TRANSITION_CHECKS):
+            d=Detect(.5)
+            if not d.isMainInterface():continue
+            if earth:
+                if d.isOrdealEarth()and(pos:=d.findChapter(self.name)):return pos
+            elif not d.isOrdealEarth()and d.findChapter(self.name)is None:return
+        if earth:raise RuntimeError(f'Chapter banner {self.name} not found on white Earth after waiting for entry')
+        raise RuntimeError(f'Chapter {self.name} map did not open after selecting its white-Earth banner')
+    def __call__(self):
+        if not Detect(.4).isOrdealEarth():fgoDevice.device.touch(self._findEntry())
+        fgoDevice.device.touch(self._waitPage(True))
+        self._waitPage(False)
 class Map:
+    hideNames=True
     poly=numpy.array([(230,40),(230,200),(40,200),(40,450),(150,450),(220,520),(630,520),(630,680),(980,680),(980,570),(1240,570),(1240,40)])
     def __init__(self,name,coord):
         self.name=name
-        self.coord=numpy.asarray(coord)
+        self.coord=numpy.asarray(coord,dtype=float)
+    def _pan(self,v):
+        delta=v*min(590/abs(v[0]),310/abs(v[1]),.5)
+        fgoDevice.device.swipe((640,360)+delta,(640,360)-delta)
+    def _camera(self):return Detect(1).findMapCamera(self.name[:-1])
     def __call__(self):
         while not Detect(1).isMainInterface():pass
         schedule.sleep(1)
-        fgoDevice.device.press('\xBF')
-        while cv2.pointPolygonTest(self.poly,p:=(640,360)+(v:=self.coord-Detect(1).findMapCamera(self.name[:-1])),False)<=0:(lambda v:fgoDevice.device.swipe((640,360)+v,(640,360)-v))(v*min(590/abs(v[0]),310/abs(v[1]),.5))
+        if self.hideNames:fgoDevice.device.press('\xBF')
+        while cv2.pointPolygonTest(self.poly,p:=(640,360)+(v:=self.coord-self._camera()),False)<=0:self._pan(v)
         fgoDevice.device.perform('  ',(300,300))
         fgoDevice.device.touch(p)
+class OrdealMap(Map):
+    hideNames=False
+    MAX_PANS=24
+    def __init__(self,name,coord):
+        super().__init__(name,coord)
+        self._lastCamera=None
+        self._cameraMisses=0
+        self._panCount=0
+    def __call__(self):
+        self._lastCamera=None
+        self._cameraMisses=0
+        self._panCount=0
+        super().__call__()
+        for _ in range(5):
+            if Detect(1).isQuestFreeContains(self.name[0]):return
+        raise RuntimeError(f'Free-quest list for node {self.name} did not open; check its unlock requirements')
+    def _camera(self):
+        while True:
+            try:camera=super()._camera()
+            except MapNotFoundError:
+                if self._lastCamera is None or self._cameraMisses>=2:raise
+                self._cameraMisses+=1
+                logger.warning(f'Map {self.name[:-1]} obscured while panning; continuing a short drag from the last confirmed camera')
+                self._pan(self.coord-self._lastCamera)
+                continue
+            self._lastCamera=camera
+            self._cameraMisses=0
+            return camera
+    def _pan(self,v):
+        if self._panCount>=self.MAX_PANS:
+            raise RuntimeError(f'Cannot reach free-quest node {self.name} after {self.MAX_PANS} drags')
+        self._panCount+=1
+        delta=v*min(240/max(abs(v[0]),1),120/max(abs(v[1]),1),.5)
+        fgoDevice.device.swipe((640,360)+delta,(640,360)-delta,1200)
+        schedule.sleep(.8)
 class Mictlan:
     elevator=[(1215,560-54*i)for i in range(9)]
     def __init__(self,name,floor,coord):
@@ -78,6 +146,7 @@ List((1,0)),List((1,1)),List((1,2)),List((1,3)),List((1,4)),List((1,5)),List((1,
 List((2,0)),List((2,1)),List((2,2)),List((2,3)),
 List((3,0)),List((3,1)),List((3,2)),List((3,3)),List((3,4)),List((3,5)),List((3,6)),List((3,7)),
 List((4,0)),List((4,1)),
+OrdealChapter((5,2)),OrdealChapter((5,3)),OrdealChapter((5,4)),
 OrdaelCall((5,1),0,(1103,183)),
 Map((1,0,0),(770,415)),Map((1,0,1),(898,910)),Map((1,0,2),(1397,635)),Map((1,0,3),(1483,318)),Map((1,0,4),(1941,869)),Map((1,0,5),(582,748)),Map((1,0,6),(374,1006)),Map((1,0,7),(382,552)),
 Map((1,1,0),(1689,385)),Map((1,1,1),(1536,314)),Map((1,1,2),(1227,557)),Map((1,1,3),(1576,634)),Map((1,1,4),(1554,883)),Map((1,1,5),(1030,780)),Map((1,1,6),(864,424)),Map((1,1,7),(1030,212)),Map((1,1,8),(1754,1086)),Map((1,1,9),(504,933)),
@@ -115,7 +184,14 @@ OrdaelCall((5,0,7),1,(905,238)),OrdaelCall((5,0,8),0,(401,338)),OrdaelCall((5,0,
 OrdaelCall((5,0,11),0),OrdaelCall((5,0,12),0,(475,332)),OrdaelCall((5,0,13),2,(670,627),(0,1,0,0)),OrdaelCall((5,0,14),0,(838,467)),
 Map((5,1,0),(805,1684)),Map((5,1,1),(1222,1723)),Map((5,1,2),(1197,1321)),Map((5,1,3),(980,1046)),Map((5,1,4),(1010,1238)),Map((5,1,5),(1391,1055)),Map((5,1,6),(824,930)),Map((5,1,7),(1830,1355)),Map((5,1,8),(1654,1176)),Map((5,1,9),(562,1373)),Map((5,1,10),(793,1121)),
 )}
+# New map assets use 1024-wide game coordinates, projected into the 1280-wide viewport.
+for chapter,coords in ordealMapNodes.items():
+    for node,coord in enumerate(coords):
+        name=(5,chapter,node)
+        place[name]=OrdealMap(name,numpy.asarray(coord)*1.25+(0,-30))
 def reishift(quest):
-    for i in range(1,len(quest)):
+    # New chapters enter white Earth through their own banner, then select it again.
+    start=2 if quest[:2]in((5,2),(5,3),(5,4))else 1
+    for i in range(start,len(quest)):
         logger.info(f'Goto {quest[:i]}')
         place.get(quest[:i],lambda:None)()

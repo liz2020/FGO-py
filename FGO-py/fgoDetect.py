@@ -3,10 +3,12 @@ from functools import reduce,wraps
 from fgoConst import PACKAGE_TO_REGION
 from fgoFuse import fuse
 from fgoLogging import getLogger,logMeta
-from fgoMetadata import servantData,servantImg,classImg,materialImg,chapterImg,mapImg,questImg
+from fgoMetadata import servantData,servantImg,classImg,materialImg,chapterImg,mapImg,questImg,ordealMapNodes,mapLandmarkImg
 from fgoOcr import Ocr
 from fgoSchedule import schedule
 logger=getLogger('Detect')
+
+class MapNotFoundError(RuntimeError):pass
 
 IMG=type('IMG',(),{i[:-4].upper():(lambda x:(x[...,:3],x[...,3]))(cv2.imread(f'fgoImage/{i}',cv2.IMREAD_UNCHANGED))for i in os.listdir('fgoImage')if i.endswith('.png')})
 for i in range(3):setattr(IMG,f'CHARGE{i}_SMALL',[cv2.resize(i,(0,0),fx=.77,fy=.77,interpolation=cv2.INTER_CUBIC)for i in getattr(IMG,f'CHARGE{i}')])
@@ -191,6 +193,15 @@ class XDetectBase(metaclass=logMeta(logger)):
     def isNoFriend(self):return self._compare(self.tmpl.NOFRIEND,(245,362,274,392))
     def isQuestFreeContains(self,chapter):return self._compare((questImg[chapter],None),(1075,115,1111,575))
     def isQuestFreeFirst(self,chapter):return self._compare((questImg[chapter],None),(1075,115,1111,270))
+    def locateQuestName(self,name):
+        rect=(760,90,1060,600)
+        expected=re.sub(r'\s+','',name)
+        for result in self.ocr.detect_and_ocr(self._crop(rect)):
+            if re.sub(r'\s+','',result.text)!=expected:continue
+            pos=numpy.mean(result.box,axis=0)
+            if 0<=pos[0]<rect[2]-rect[0]and 0<=pos[1]<rect[3]-rect[1]:
+                return(rect[0]+int(pos[0]),rect[1]+int(pos[1]))
+        return None
     def isQuestListBegin(self):return self._isListBegin((1258,95))
     def isServantDead(self,pos,friend=None):return any((self._watchServantPortrait[pos].send(self),self._watchServantFriend[pos].send(self.isServantFriend(pos)if friend is None else friend)))
     def isServantFriend(self,pos):return self._compare(self.tmpl.SUPPORT,(187+318*pos,394,225+318*pos,412))
@@ -210,6 +221,7 @@ class XDetectBase(metaclass=logMeta(logger)):
     def isSynthesisBegin(self):return self._compare(self.tmpl.SYNTHESIS,(16,12,112,73))
     def isSynthesisFinished(self):return self._compare(self.tmpl.DECIDEDISABLED,(1035,625,1275,711))
     def isTerminal(self):return numpy.mean(self._crop((111,571,162,610)))<100
+    def isOrdealEarth(self):return re.sub(r'[^A-Z]','',OCR.EN.ocrText(self._crop((1020,0,1280,65))).upper())=='ORDEALCALL'
     def isTurnBegin(self):return self._compare(self.tmpl.ATTACK,(1155,635,1210,682))
     def isWeeklyMission(self):return numpy.min(cv2.matchTemplate(servantImg[1][1][3][0],cv2.resize(self._crop((296,117,421,210)),(0,0),fx=.555,fy=.555,interpolation=cv2.INTER_CUBIC),cv2.TM_SQDIFF_NORMED))<.1
     def isWeeklyMissionListEnd(self):return self._isListEnd((1261,614))
@@ -258,7 +270,39 @@ class XDetectBase(metaclass=logMeta(logger)):
     def findFriend(self,img):return self._find(img,(13,166,1233,720),.04)
     def findMail(self,img):return self._find(img,(73,166,920,720),.017)
     def findNextMarker(self,rect=(0,0,1280,720)):return self._find(self.tmpl.NEXTMARKER,rect,.13)
-    def findMapCamera(self,chapter):return numpy.array(cv2.minMaxLoc(cv2.matchTemplate(mapImg[chapter],cv2.resize(self._crop((200,200,1080,520)),(0,0),fx=.3,fy=.3,interpolation=cv2.INTER_CUBIC),cv2.TM_SQDIFF_NORMED))[2])/.3+(440,160)
+    def findMapCamera(self,chapter):
+        if chapter in((5,2),(5,3),(5,4))and self.isOrdealEarth():
+            raise RuntimeError(f'Chapter {chapter} is still on white Earth, not its quest map')
+        score,_,pos,_=cv2.minMaxLoc(cv2.matchTemplate(mapImg[chapter],cv2.resize(self._crop((200,200,1080,520)),(0,0),fx=.3,fy=.3,interpolation=cv2.INTER_CUBIC),cv2.TM_SQDIFF_NORMED))
+        if chapter in((5,2),(5,3),(5,4))and score>.15:
+            # Large chapter scenery overlays can obscure the background texture.
+            matches=[]
+            rect=(200,100,1080,600)
+            for name,img in mapLandmarkImg.items():
+                if name[:2]!=chapter:continue
+                confidence,_,location,_=self._loc(img,rect)
+                if confidence<.22:
+                    x,y=location
+                    patch=self._crop((rect[0]+x,rect[1]+y,rect[0]+x+img[0].shape[1],rect[1]+y+img[0].shape[0]))
+                    mask=img[1]>192
+                    if not numpy.any(mask):continue
+                    reference=img[0][mask].astype(numpy.float32)
+                    observed=patch[mask].astype(numpy.float32)
+                    reference-=reference.mean(axis=0)
+                    observed-=observed.mean(axis=0)
+                    norm=numpy.sqrt(numpy.sum(reference*reference)*numpy.sum(observed*observed))
+                    if norm==0 or numpy.sum(reference*observed)<.7*norm:continue
+                    center=numpy.asarray(location)+(rect[0]+img[0].shape[1]/2,rect[1]+img[0].shape[0]/2)
+                    camera=numpy.asarray(ordealMapNodes[chapter[1]][name[2]])*1.25+(640,320)-center
+                    matches.append((confidence,camera))
+            if matches:
+                matches.sort(key=lambda item:item[0])
+                confidence,camera=matches[0]
+                if any(other<confidence+.02 and numpy.linalg.norm(coord-camera)>20 for other,coord in matches[1:]):
+                    raise RuntimeError(f'Ambiguous free-quest landmarks for chapter {chapter}')
+                return camera
+            raise MapNotFoundError(f'Cannot locate chapter {chapter} on its free-quest map (score={score:.3f})')
+        return numpy.asarray(pos)/.3+(440,160)
     @classmethod
     def saveSummonHistory(cls):return(lambda c:(lambda img:(c,cls.__new__(cls).inject(img).save(f'SummonHistory({c})',(0,0,*img.shape[::-1]))))(numpy.vstack((cv2.putText(numpy.zeros((36,XDetectBase._summonHistory.shape[1]),numpy.uint8),f'SummonHistory({c}) generated by FGO-py',(8,26),cv2.FONT_HERSHEY_DUPLEX,0.85,255,2,cv2.LINE_4),XDetectBase._summonHistory[:numpy.flatnonzero(numpy.max(XDetectBase._summonHistory,axis=1))[-1]+2]))))(cls.getSummonHistoryCount())
     def isGameAnnounce(self):raise NotImplementedError
