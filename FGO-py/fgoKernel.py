@@ -541,7 +541,7 @@ def _advanceBattleResult(max_steps=10):
         fgoDevice.device.press(' ')
         schedule.sleep(.4)
 
-def skipStoryToBattle(timeout_s=180, auto_select_support=True, support_name='', skip_story=True):
+def skipStoryToBattle(timeout_s=180, auto_select_support=True, support_name='', skip_story=True, stop_on_ap_empty=False):
     """Advance story/dialog screens before auto battle.
 
     Returns "battle" when battle controls appear, "done" when the flow reaches a
@@ -552,6 +552,8 @@ def skipStoryToBattle(timeout_s=180, auto_select_support=True, support_name='', 
     while time.time()<deadline:
         schedule.checkStop()
         d=Detect(0,.3)
+        if stop_on_ap_empty and d.isApEmpty():
+            raise RuntimeError('Interlude task stopped: not enough AP; no apples will be consumed')
         if d.isTurnBegin():
             return 'battle'
         if d.isBattleFinished()or d.isBattleDefeated():
@@ -646,6 +648,10 @@ def _startFormation(d):
         _confirmBattleStart()
 
 def _selectSupport(support_name=''):
+    if pos:=Detect(0,.3).locateForcedSupport():
+        logger.info('Selecting mandatory NPC support instead of searching by name')
+        fgoDevice.device.touch(pos,700)
+        return
     support_name=support_name.strip()
     if support_name:
         if _selectSupportByName(support_name):
@@ -723,18 +729,42 @@ def _selectSupportByName(support_name):
     logger.warning('Support OCR text not found after refresh: %s', support_name)
     return False
 
+def _clearFormationRestrictions(d,maxDialogs=10):
+    for _ in range(maxDialogs):
+        schedule.checkStop()
+        if not d.isBattleFormationRestriction():
+            return d
+        if not(pos:=d.locateFormationRestrictionCloseButton()):
+            raise ScriptStop('Formation restriction close button not found')
+        logger.info('Closing formation condition dialog before continuing formation')
+        fgoDevice.device.touch(pos,700)
+        d=Detect(.3,.3)
+    if d.isBattleFormationRestriction():
+        raise ScriptStop(f'Formation condition dialogs did not clear after {maxDialogs} dismissals')
+    return d
+
 def _useAutoFormation(d=None):
     logger.info('Using auto formation before auto battle')
     if d is None:d=Detect(0,.3)
-    if not d.isAutoFormationPrompt():
+    d=_clearFormationRestrictions(d)
+    if not d.isAutoFormationPrompt()and not d.locateAutoFormationConfirmButton():
         fgoDevice.device.perform('\xDE',(1000,))
-        d=Detect(0,.3)
-    if not d.isAutoFormationPrompt()or not(pos:=d.locateAutoFormationConfirmButton()):
+        d=_clearFormationRestrictions(Detect(.5,.3))
+    for attempt in range(10):
+        schedule.checkStop()
+        if pos:=d.locateAutoFormationConfirmButton():
+            break
+        if attempt<9:
+            d=_clearFormationRestrictions(Detect(.5,.3))
+    else:
         raise ScriptStop('Auto formation confirmation button not found')
     fgoDevice.device.touch(pos)
     schedule.sleep(1.5)
-    d=Detect(0,.3)
-    if not(pos:=d.locateFormationDecideButton()):
+    for attempt in range(10):
+        d=_clearFormationRestrictions(Detect(.5,.3))
+        if not d.isAutoFormationPrompt()and not d.locateAutoFormationConfirmButton()and(pos:=d.locateFormationDecideButton()):
+            break
+    else:
         raise ScriptStop('Formation decide button not found after auto formation')
     fgoDevice.device.touch(pos,1000)
 
@@ -778,13 +808,101 @@ def findNextChapter(timeout_s=30,steps=2,target_offset_y=130,settle_ms=1200,on_p
         return {'clicks':clicked,'reached_pre_battle':False,'reached_battle':False}
     raise TimeoutError(f'Next marker not found within {timeout_s}s')
 
+def findNextInterlude(timeout_s=60,on_progress=None):
+    """Navigate CN interludes to the existing auto-battle entry point."""
+    if XDetect.region!='CN':
+        raise ValueError('Automatic interlude navigation currently supports the CN client only')
+    if timeout_s<=0:
+        raise ValueError('Interlude navigation timeout must be positive')
+    notify=on_progress if callable(on_progress)else lambda _:None
+    deadline=time.monotonic()+timeout_s
+    selected=None
+    rewind=True
+    terminal=False
+    scrolls=0
+    waiting_return=False
+    entrance=None
+    while time.monotonic()<deadline:
+        schedule.checkStop()
+        d=Detect(0,.3)
+        if d.isApEmpty():
+            raise RuntimeError('Interlude task stopped: not enough AP; no apples will be consumed')
+        if d.isBattleDefeated():
+            raise RuntimeError('Interlude task stopped after a defeat')
+        if d.isTurnBegin()or d.isChooseFriend()or d.isBattleFormation()or d.isBattleFormationRestriction()or d.isAutoFormationPrompt()or d.isStorySkip():
+            return {'ready':True,'entry':selected}
+        if pos:=d.locateInterludeStart():
+            fgoDevice.device.touch(pos,1200)
+            deadline=time.monotonic()+timeout_s
+            continue
+        returning=d.locateInterludeReturn()
+        if returning:
+            if waiting_return or(selected and not selected['stage']):
+                continue
+            entries=d.getInterludeEntries()if selected else[]
+            if selected:
+                if not entries:
+                    continue
+                entry=next((item for item in entries if item['name']==selected['name']),None)
+                if entry is None:
+                    raise RuntimeError(f"Interlude not found on its story stage: {selected['name']}")
+                selected=entry
+                notify(f"Opening interlude: {entry['name']}")
+                fgoDevice.device.touch(entry['target'],1200)
+            else:
+                notify('Returning to the interlude list')
+                fgoDevice.device.touch(returning,1200)
+                rewind=True
+                waiting_return=True
+            deadline=time.monotonic()+timeout_s
+            continue
+        waiting_return=False
+        if d.isInterludeList():
+            if selected:
+                continue
+            if rewind and not d.isQuestListBegin():
+                notify('Rewinding interlude list')
+                fgoDevice.device.swipe((1000,180),(1000,560))
+            else:
+                rewind=False
+                entries=d.getInterludeEntries()
+                if entries:
+                    selected=entries[0]
+                    notify(f"Opening interlude: {selected['name']}")
+                    fgoDevice.device.touch(selected['target'],1200)
+                elif d.isInterludeListEnd():
+                    notify('No unlocked unfinished interludes remain')
+                    return {'ready':False,'entry':None}
+                else:
+                    notify('Scanning interlude list')
+                    fgoDevice.device.swipe((1000,560),(1000,180))
+            scrolls+=1
+            if scrolls>120:
+                raise RuntimeError('Interlude list could not be scanned within 120 scrolls')
+            deadline=time.monotonic()+timeout_s
+            continue
+        if pos:=d.locateInterludeEntrance():
+            if pos==entrance:
+                continue
+            notify('Opening Chaldea Gate / interlude list')
+            fgoDevice.device.touch(pos,1200)
+            entrance=pos
+            deadline=time.monotonic()+timeout_s
+            continue
+        if d.isMainInterface()and not terminal:
+            notify('Returning to Terminal')
+            fgoDevice.device.press(' ')
+            fgoDevice.device.perform(*((' ',(600,))if Detect(.6).isTerminal()else('S',(1500,))))
+            terminal=True
+            continue
+        if terminal and d.isMainInterface()and not d.isQuestListBegin():
+            fgoDevice.device.swipe((1000,180),(1000,560))
+    raise TimeoutError(f'Interlude navigation did not reach a known endpoint within {timeout_s}s')
+
 def _fixFormationRestriction():
-    logger.info('Formation restriction detected; closing modal and using auto formation')
-    d=Detect(0,.3)
-    if not(pos:=d.locateFormationRestrictionCloseButton()):
-        raise ScriptStop('Formation restriction close button not found')
-    fgoDevice.device.touch(pos,500)
-    _useAutoFormation()
+    logger.info('Formation restriction detected; clearing condition dialogs and using auto formation')
+    d=_clearFormationRestrictions(Detect(0,.3))
+    _useAutoFormation(d)
 
 def _resolveFormationRestriction(maxAttempts=3):
     for _ in range(maxAttempts):

@@ -603,6 +603,7 @@
             <select id="selTaskType" onchange="onTaskTypeChange()">
                 <option value="launch_game">Launch Game</option>
                 <option value="auto_main_story">自动过主线</option>
+                <option value="auto_interlude">自动过幕间物语</option>
                 <option value="wait">Wait</option>
                 <option value="find_next_chapter">Find Next Chapter</option>
                 <option value="start_auto_battle">Start Auto Battle</option>
@@ -636,6 +637,9 @@
         <div class="form-row" id="taskParamFriendPoints" style="display:none">
             <label>Repeat</label>
             <input type="number" id="inputFriendPointsRepeat" value="10" min="1" max="999" style="width:60px">
+        </div>
+        <div id="taskParamInterlude" style="display:none; font-size:0.75rem; color:var(--text-dim); margin-top:4px">
+            清理所有可进行幕间，自动跳过剧情并复用自动战斗。固定助战优先；AP 不足时停止，不吃苹果。
         </div>
         <button class="btn-add" onclick="addTaskToQueue()">+ Add to Queue</button>
     </div>
@@ -985,6 +989,7 @@ function describeTask(task) {
     if (task.type === 'battle') return 'Battle';
     if (task.type === 'find_next_chapter') return 'Find Next Chapter';
     if (task.type === 'start_auto_battle') return 'Start Auto Battle';
+    if (task.type === 'auto_interlude') return '自动过幕间物语';
     if (task.type === 'wait') return `Wait ${task.params.minutes || '?'} min`;
     if (task.type === 'stop_emulator') return 'Stop Emulator';
     if (task.type === 'start_emulator') return 'Start Emulator';
@@ -1073,6 +1078,7 @@ function onTaskTypeChange() {
     document.getElementById('taskParamLoop').style.display = type === 'loop' ? '' : 'none';
     document.getElementById('taskParamLaunchGame').style.display = type === 'launch_game' ? '' : 'none';
     document.getElementById('taskParamFriendPoints').style.display = type === 'friend_points' ? '' : 'none';
+    document.getElementById('taskParamInterlude').style.display = type === 'auto_interlude' ? '' : 'none';
 }
 
 async function addTaskToQueue() {
@@ -1085,7 +1091,7 @@ async function addTaskToQueue() {
         params.timeout_s = parseInt(document.getElementById('inputLaunchGameTimeout').value) || 300;
     } else if (type === 'find_next_chapter') {
         params = { timeout_s: 30, steps: 2, target_offset_y: 130, settle_ms: 1200 };
-    } else if (type === 'start_auto_battle' || type === 'auto_main_story') {
+    } else if (type === 'start_auto_battle' || type === 'auto_main_story' || type === 'auto_interlude') {
         const supportName = document.getElementById('inputSupportName').value.trim();
         params = {
             auto_select_support: document.getElementById('chkAutoSelectSupport').checked,
@@ -1094,6 +1100,11 @@ async function addTaskToQueue() {
             idle_action_delay_s: Math.max(0, parseFloat(document.getElementById('inputIdleActionDelay').value) || 0),
         };
         if (supportName) params.support_name = supportName;
+        if (type === 'auto_interlude') {
+            params.auto_select_support = true;
+            params.skip_story = true;
+            params.navigation_timeout_s = 60;
+        }
         if (type === 'auto_main_story') {
             children = [
                 { type: 'find_next_chapter', params: { timeout_s: 30, steps: 2, target_offset_y: 130, settle_ms: 1200 } },
@@ -1413,6 +1424,7 @@ function describeTaskDetails(task) {
     if (task.type === 'battle') return 'One-off battle';
     if (task.type === 'find_next_chapter') return `Follow the 下一个 marker to the chapter, then follow the sidebar 下一个 marker to the battle (timeout ${task.params.timeout_s || 30}s)`;
     if (task.type === 'start_auto_battle') return `${task.params.skip_story === false ? 'Run auto battle without skipping story' : 'Skip story and run auto battle'} (timeout ${task.params.timeout_s || 180}s, idle delay ${task.params.idle_action_delay_s ?? 0.5}s)`;
+    if (task.type === 'auto_interlude') return '清理所有已解锁、未完成的幕间；自动前往故事舞台并复用自动战斗，固定助战优先。AP 不足或关卡无法处理时停止，不吃苹果。';
     if (task.type === 'wait') return `Wait for ${task.params.minutes || '?'} minutes`;
     if (task.type === 'stop_emulator') return 'Stop the emulator instance';
     if (task.type === 'start_emulator') return 'Start the emulator instance';
