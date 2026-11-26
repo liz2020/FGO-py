@@ -534,6 +534,8 @@ class Battle:
 def _advanceBattleResult(max_steps=10):
     for _ in range(max_steps):
         d=Detect(0,.3)
+        if _dismissServantUpdate(d):
+            continue
         if d.isBattleContinue()or d.isMainInterface()or d.isBattleFormation()or d.isChooseFriend()or d.isTurnBegin():
             return
         if _dismissFriendRequest(d):
@@ -554,6 +556,8 @@ def skipStoryToBattle(timeout_s=180, auto_select_support=True, support_name='', 
         d=Detect(0,.3)
         if stop_on_ap_empty and d.isApEmpty():
             raise RuntimeError('Interlude task stopped: not enough AP; no apples will be consumed')
+        if _dismissServantUpdate(d):
+            continue
         if d.isTurnBegin():
             return 'battle'
         if d.isBattleFinished()or d.isBattleDefeated():
@@ -585,6 +589,8 @@ def skipStoryAfterBattle(timeout_s=90, skip_story=True):
     while time.time()<deadline:
         schedule.checkStop()
         d=Detect(0,.3)
+        if _dismissServantUpdate(d):
+            continue
         if d.isMainInterface()or d.isBattleContinue()or d.isBattleFormation()or d.isChooseFriend()or d.isTurnBegin():
             return True
         if _dismissFriendRequest(d):
@@ -598,6 +604,13 @@ def skipStoryAfterBattle(timeout_s=90, skip_story=True):
             logger.info('Skipping story/dialog after auto battle')
             logged=True
         _advanceStory(d)
+    return False
+
+def _dismissServantUpdate(d):
+    if pos:=d.locateServantUpdateCloseButton():
+        logger.info('Closing servant profile update notification without opening the profile')
+        fgoDevice.device.touch(pos,700)
+        return True
     return False
 
 def _dismissFriendRequest(d):
@@ -825,6 +838,8 @@ def findNextInterlude(timeout_s=60,on_progress=None):
     while time.monotonic()<deadline:
         schedule.checkStop()
         d=Detect(0,.3)
+        if _dismissServantUpdate(d):
+            continue
         if d.isApEmpty():
             raise RuntimeError('Interlude task stopped: not enough AP; no apples will be consumed')
         if d.isBattleDefeated():

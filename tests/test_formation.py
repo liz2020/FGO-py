@@ -240,6 +240,7 @@ def test_post_battle_ends_friend_request_even_without_story_skip(skip_story):
     }, {
         "time": MagicMock(), "schedule": MagicMock(), "Detect": MagicMock(),
         "fgoDevice": MagicMock(), "logger": MagicMock(), "_advanceStory": MagicMock(),
+        "_dismissServantUpdate": MagicMock(return_value=False),
     })
     namespace["time"].time.return_value = 0
     request, done = MagicMock(), MagicMock()
@@ -294,6 +295,7 @@ def test_restriction_without_visible_battle_button_routes_to_formation(skip_stor
     namespace = load_definitions("fgoKernel.py", {"skipStoryToBattle"}, {
         "time": MagicMock(), "schedule": MagicMock(), "Detect": MagicMock(),
         "_startFormation": MagicMock(),
+        "_dismissServantUpdate": MagicMock(return_value=False),
     })
     namespace["time"].time.return_value = 0
     restriction, battle = MagicMock(), MagicMock()

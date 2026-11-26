@@ -110,6 +110,16 @@ class XDetectBase(metaclass=logMeta(logger)):
                 center=numpy.mean(result.box,axis=0)
                 return(int(center[0])+rect[0],int(center[1])+rect[1])
         return None
+    def locateServantUpdateCloseButton(self):
+        text=re.sub(r'\s+','',''.join(self.ocr.ocrArea(self._crop((350,230,930,420)))))
+        if not any(label in text for label in('从者资料更新','從者資料更新')):
+            return None
+        rect=(220,510,620,620)
+        for result in self.ocr.detect_and_ocr(self._crop(rect)):
+            if re.sub(r'\s+','',result.text).upper()in{'关闭','關閉','閉じる','CLOSE'}:
+                center=numpy.mean(result.box,axis=0)
+                return(int(center[0])+rect[0],int(center[1])+rect[1])
+        return None
     def isApEmpty(self):return self._compare(self.tmpl.APEMPTY,(522,582,758,652))
     def isAutoFormationPrompt(self):
         try:text=''.join(self.ocr.ocrArea(self._crop((280,35,1000,140)))).upper()
