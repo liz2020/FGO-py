@@ -148,11 +148,11 @@ def screen(**overrides):
         "isApEmpty", "isBattleDefeated", "isTurnBegin", "isChooseFriend",
         "isBattleFormation", "isBattleFormationRestriction", "isAutoFormationPrompt",
         "isStorySkip", "isInterludeList", "isInterludeListEnd", "isQuestListBegin",
-        "isMainInterface", "isTerminal",
+        "isMainInterface", "isTerminal", "isBattleContinue",
         "isBattleFinished", "isSpecialDropSuspended", "isSpecialDropRainbowBox",
     ):
         getattr(d, method).return_value = False
-    for method in ("locateInterludeStart", "locateInterludeReturn", "locateInterludeEntrance"):
+    for method in ("locateInterludeStart", "locateInterludeReturn", "locateInterludeEntrance", "locateStorySkipConfirmButton"):
         getattr(d, method).return_value = None
     d.getInterludeEntries.return_value = []
     for method, value in overrides.items():
@@ -358,10 +358,14 @@ def battle_loop():
     return ns
 
 
-@pytest.mark.parametrize("completion", ["story", "skip_confirmation"])
+@pytest.mark.parametrize("completion", ["story", "skip_confirmation", "main", "interlude_list"])
 def test_battle_hands_direct_story_transition_back_to_cleanup(battle_loop, completion):
     begin = screen(isTurnBegin=True)
-    story = screen(isStorySkip=completion == "story")
+    story = screen(
+        isStorySkip=completion == "story",
+        isMainInterface=completion == "main",
+        isInterludeList=completion == "interlude_list",
+    )
     story.locateStorySkipConfirmButton.return_value = (827, 562) if completion == "skip_confirmation" else None
     battle_loop["feed"]([begin, story])
     battle = battle_loop["Battle"](allowStoryCompletion=True)
@@ -369,6 +373,25 @@ def test_battle_hands_direct_story_transition_back_to_cleanup(battle_loop, compl
     assert battle.turn == 1
     assert battle.result["material"] == {}
     battle_loop["schedule"].checkDefeated.assert_not_called()
+    battle_loop["fgoDevice"].device.perform.assert_called_once_with('\xBB\x08', (100, 100))
+
+
+@pytest.mark.parametrize("function,expected", [
+    ("skipStoryToBattle", "done"), ("skipStoryAfterBattle", True),
+])
+def test_interlude_list_is_an_endpoint_without_story_or_top_bar_taps(function, expected):
+    times = iter([0, 0, 2])
+    ns = load_definitions("fgoKernel.py", {function}, {
+        "time": SimpleNamespace(time=lambda: next(times)), "logger": MagicMock(),
+        "schedule": MagicMock(), "Detect": MagicMock(), "fgoDevice": MagicMock(),
+        "_dismissServantUpdate": MagicMock(return_value=False),
+        "_dismissFriendRequest": MagicMock(return_value=False), "_advanceStory": MagicMock(),
+    })
+    ns["Detect"].return_value = screen(isInterludeList=True)
+    assert ns[function](timeout_s=1) == expected
+    ns["_advanceStory"].assert_not_called()
+    ns["fgoDevice"].device.touch.assert_not_called()
+    ns["fgoDevice"].device.perform.assert_not_called()
 
 
 def test_battle_hands_real_story_skip_dialog_back_to_cleanup(battle_loop, detector):
@@ -381,9 +404,21 @@ def test_battle_hands_real_story_skip_dialog_back_to_cleanup(battle_loop, detect
     assert battle_loop["Battle"](allowStoryCompletion=True)() is None
 
 
+def test_battle_hands_real_interlude_list_back_without_top_bar_taps(battle_loop, detector):
+    inject_fixture(detector, "interlude-direct-list-header", (960, 0, 1280, 85))
+    assert detector.isInterludeList()
+    battle_loop["feed"]([
+        screen(isTurnBegin=True),
+        screen(isInterludeList=detector.isInterludeList()),
+    ])
+    assert battle_loop["Battle"](allowStoryCompletion=True)() is None
+    battle_loop["fgoDevice"].device.perform.assert_called_once_with('\xBB\x08', (100, 100))
+
+
 @pytest.mark.parametrize("allow_story_completion", [False, True])
-def test_battle_does_not_treat_initial_story_as_a_completed_battle(battle_loop, allow_story_completion):
-    initial = screen(isStorySkip=True)
+@pytest.mark.parametrize("endpoint", ["isStorySkip", "isMainInterface", "isInterludeList"])
+def test_battle_does_not_treat_initial_story_as_a_completed_battle(battle_loop, allow_story_completion, endpoint):
+    initial = screen(**{endpoint: True})
     begin = screen(isTurnBegin=True)
     finish = screen(isBattleFinished=True, getMaterial={"test_drop": 1})
     battle_loop["feed"]([initial, begin, finish, finish])
@@ -393,18 +428,19 @@ def test_battle_does_not_treat_initial_story_as_a_completed_battle(battle_loop, 
     assert battle.result["material"] == {"test_drop": 1}
 
 
-def test_default_battle_still_waits_for_a_result_after_a_story_frame(battle_loop):
+@pytest.mark.parametrize("endpoint", ["isStorySkip", "isMainInterface", "isInterludeList"])
+def test_default_battle_still_waits_for_a_result_after_a_story_frame(battle_loop, endpoint):
     begin = screen(isTurnBegin=True)
-    story = screen(isStorySkip=True)
+    story = screen(**{endpoint: True})
     finish = screen(isBattleFinished=True, getMaterial={})
     battle_loop["feed"]([begin, story, finish, finish])
     assert battle_loop["Battle"]()() is True
-    story.isStorySkip.assert_not_called()
+    getattr(story, endpoint).assert_not_called()
 
 
 def test_explicit_defeat_still_takes_precedence_over_story_completion(battle_loop):
     begin = screen(isTurnBegin=True)
-    defeat = screen(isBattleDefeated=True, isStorySkip=True)
+    defeat = screen(isBattleDefeated=True, isStorySkip=True, isMainInterface=True, isInterludeList=True)
     battle_loop["feed"]([begin, defeat])
     assert battle_loop["Battle"](allowStoryCompletion=True)() is False
     battle_loop["schedule"].checkDefeated.assert_called_once_with()
