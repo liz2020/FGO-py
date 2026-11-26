@@ -132,6 +132,59 @@ class TestScriptEndpoints:
     def test_start_missing_instance(self, client):
         assert client.post("/api/scripts/fgo/start", json={"instance_index": 99}).status_code == 404
 
+    def test_start_reports_an_occupied_port(self, client):
+        import emu.service
+        emu.service.backend.resolve_instance.return_value = (MagicMock(install_dir=r"C:\leidian\LDPlayer14"), 0)
+        with patch.object(registry, "start", side_effect=RuntimeError("Port 15001 is already occupied")):
+            resp = client.post("/api/scripts/fgo/start", json={"instance_index": 0})
+        assert resp.status_code == 409
+        assert "already occupied" in resp.json()["detail"]
+
+    def test_force_stop_clears_only_this_instances_progress(self, client):
+        import emu.service
+        from pathlib import Path
+        emu.service._farming_progress[("fgo", 0)] = {"current": 2}
+        emu.service._farming_progress[("fgo", 1)] = {"current": 3}
+        try:
+            with patch.object(registry, "force_stop", return_value=[123]) as force_stop:
+                resp = client.post("/api/scripts/fgo/force-stop", json={"instance_index": 0})
+            assert resp.status_code == 200
+            assert resp.json() == {"success": True, "killed_pids": [123]}
+            force_stop.assert_called_once_with(
+                "fgo", 0, "127.0.0.1:5555", Path(emu.service.__file__).resolve().parent.parent,
+            )
+            assert ("fgo", 0) not in emu.service._farming_progress
+            assert emu.service._farming_progress[("fgo", 1)] == {"current": 3}
+            emu.service.backend.stop.assert_not_called()
+        finally:
+            emu.service._farming_progress.pop(("fgo", 0), None)
+            emu.service._farming_progress.pop(("fgo", 1), None)
+
+    @pytest.mark.parametrize("index", [None, -1, True, "0", .5])
+    def test_force_stop_rejects_invalid_indices_before_killing(self, client, index):
+        with patch.object(registry, "force_stop") as force_stop:
+            resp = client.post("/api/scripts/fgo/force-stop", json={"instance_index": index})
+        assert resp.status_code == 400
+        force_stop.assert_not_called()
+
+    def test_force_stop_rejects_unknown_script_or_instance(self, client):
+        with patch.object(registry, "force_stop") as force_stop:
+            assert client.post("/api/scripts/unknown/force-stop", json={"instance_index": 0}).status_code == 404
+            assert client.post("/api/scripts/fgo/force-stop", json={"instance_index": 99}).status_code == 404
+        force_stop.assert_not_called()
+
+    def test_force_stop_reports_failure_without_clearing_progress(self, client):
+        import emu.service
+        emu.service._farming_progress[("fgo", 0)] = {"current": 2}
+        try:
+            with patch.object(registry, "force_stop", side_effect=RuntimeError("Unverified port owner")):
+                resp = client.post("/api/scripts/fgo/force-stop", json={"instance_index": 0})
+            assert resp.status_code == 409
+            assert resp.json()["detail"] == "Unverified port owner"
+            assert emu.service._farming_progress[("fgo", 0)] == {"current": 2}
+        finally:
+            emu.service._farming_progress.pop(("fgo", 0), None)
+
 
 def test_shutdown_stops_scripts_without_stopping_emulator():
     mock_backend = MagicMock()

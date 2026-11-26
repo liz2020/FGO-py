@@ -490,12 +490,13 @@ class Turn:
         while not Detect().isTurnBegin():pass
         Detect(.5)
 class Battle:
-    def __init__(self,turnClass=Turn,idleActionDelay=0.5):
+    def __init__(self,turnClass=Turn,idleActionDelay=0.5,allowStoryCompletion=False):
         self.turn=0
         self.turnProc=turnClass()
         self.rainbowBox=False
         self.idleActionDelay=max(0,idleActionDelay)
-    def __call__(self):
+        self.allowStoryCompletion=allowStoryCompletion
+    def __call__(self)->bool|None:
         self.start=time.time()
         self.material={}
         while True:
@@ -520,6 +521,9 @@ class Battle:
                 logger.warning('Battle Defeated')
                 schedule.checkDefeated()
                 return False
+            elif self.allowStoryCompletion and self.turn and(Detect.cache.isStorySkip()or Detect.cache.locateStorySkipConfirmButton()):
+                logger.info('Battle returned directly to story without a victory or defeat result')
+                return None
             fgoDevice.device.perform('\xBB\x08',(100,100))
             if self.idleActionDelay:schedule.sleep(self.idleActionDelay)
     @property
@@ -557,6 +561,10 @@ def skipStoryToBattle(timeout_s=180, auto_select_support=True, support_name='', 
         if stop_on_ap_empty and d.isApEmpty():
             raise RuntimeError('Interlude task stopped: not enough AP; no apples will be consumed')
         if _dismissServantUpdate(d):
+            continue
+        if pos:=d.locateInterludeStart():
+            logger.info('Confirming quest start before auto battle')
+            fgoDevice.device.touch(pos,1200)
             continue
         if d.isTurnBegin():
             return 'battle'

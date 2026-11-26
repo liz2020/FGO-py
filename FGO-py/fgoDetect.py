@@ -225,11 +225,13 @@ class XDetectBase(metaclass=logMeta(logger)):
     def locateInterludeReturn(self):
         return self._locateInterludeLabel({'前往幕间物语','返回幕间','返回幕间物语'},(0,80,220,190))
     def locateInterludeStart(self):
-        text=re.sub(r'\s+','',''.join(self.ocr.ocrArea(self._crop((350,230,930,520)))))
+        text=re.sub(r'\s+','',''.join(self.ocr.ocrArea(self._crop((350,200,930,520)))))
         if '是否开始关卡'in text:
             labels={'开始'}
         elif '该任务没有战斗'in text and'是否开始任务'in text:
             labels={'任务开始'}
+        elif '是否现在开始挑战关卡'in text and all(label in text for label in('败北','剧情','推进')):
+            labels={'开始'}
         else:
             return None
         return self._locateInterludeLabel(labels,(700,510,990,610))

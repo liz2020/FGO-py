@@ -22,6 +22,7 @@ DETECTORS = {
     "getInterludeEntries", "locateForcedSupport",
     "_loc", "_isListEnd",
     "locateServantUpdateCloseButton",
+    "locateStorySkipConfirmButton",
 }
 
 
@@ -93,9 +94,19 @@ def test_real_story_only_confirmation_targets_task_start(detector):
     assert 750 < pos[0] < 930 and 530 < pos[1] < 590
 
 
+def test_real_defeat_allowed_confirmation_targets_start(detector):
+    inject_fixture(detector, "interlude-defeat-allowed", (350, 200, 990, 610))
+    pos = detector.locateInterludeStart()
+    assert pos is not None
+    assert 800 < pos[0] < 890 and 540 < pos[1] < 590
+
+
 @pytest.mark.parametrize("text,expected_labels", [
     ("该关卡将在战斗前进行编队。是否开始关卡？", {"开始"}),
     ("该任务没有战斗。是否开始任务？", {"任务开始"}),
+    ("该关卡即便在战斗中败北，关卡剧情依然会推进。是否现在开始挑战关卡？", {"开始"}),
+    ("是否现在开始挑战关卡？", None),
+    ("该关卡即便在战斗中败北，关卡剧情依然会推进。", None),
     ("该任务没有战斗", None),
     ("是否开始任务？", None),
 ])
@@ -138,6 +149,7 @@ def screen(**overrides):
         "isBattleFormation", "isBattleFormationRestriction", "isAutoFormationPrompt",
         "isStorySkip", "isInterludeList", "isInterludeListEnd", "isQuestListBegin",
         "isMainInterface", "isTerminal",
+        "isBattleFinished", "isSpecialDropSuspended", "isSpecialDropRainbowBox",
     ):
         getattr(d, method).return_value = False
     for method in ("locateInterludeStart", "locateInterludeReturn", "locateInterludeEntrance"):
@@ -188,6 +200,24 @@ def test_story_only_confirmation_continues_to_existing_auto_battle_entry(navigat
     assert navigation["fgoDevice"].device.touch.call_args_list == [
         call((950, 170), 1200), call((840, 560), 1200),
     ]
+
+
+@pytest.mark.parametrize("skip_story", [True, False])
+def test_auto_battle_confirms_quest_start_before_endpoints_and_generic_popups(skip_story):
+    ticks = count(step=.1)
+    ns = load_definitions("fgoKernel.py", {"skipStoryToBattle"}, {
+        "time": SimpleNamespace(time=lambda: next(ticks)),
+        "schedule": MagicMock(), "Detect": MagicMock(), "fgoDevice": MagicMock(),
+        "logger": MagicMock(), "_advanceStory": MagicMock(),
+        "_dismissServantUpdate": MagicMock(return_value=False),
+    })
+    confirmation = screen(locateInterludeStart=(840, 560), isMainInterface=True)
+    formation_confirmation = screen(locateInterludeStart=(840, 560), isMainInterface=True)
+    battle = screen(isTurnBegin=True)
+    ns["Detect"].side_effect = [confirmation, formation_confirmation, battle]
+    assert ns["skipStoryToBattle"](skip_story=skip_story) == "battle"
+    assert ns["fgoDevice"].device.touch.call_args_list == [call((840, 560), 1200)] * 2
+    ns["_advanceStory"].assert_not_called()
 
 
 def test_existing_stage_returns_to_list_before_selecting_another_interlude(navigation):
@@ -280,7 +310,7 @@ def test_stalled_interlude_does_not_loop_forever(worker):
 
 
 @pytest.mark.parametrize("won,cleaned,error", [
-    (False, True, RuntimeError), (True, False, TimeoutError),
+    (False, True, RuntimeError), (True, False, TimeoutError), (None, False, TimeoutError),
 ])
 def test_interlude_runner_surfaces_defeat_and_cleanup_failure(won, cleaned, error):
     ns = load_definitions("fgoTaskQueue.py", {"_run_auto_battle_sync"}, {
@@ -292,6 +322,93 @@ def test_interlude_runner_surfaces_defeat_and_cleanup_failure(won, cleaned, erro
     with pytest.raises(error):
         ns["_run_auto_battle_sync"](strict=True)
     assert ns["fgoKernel"].skipStoryToBattle.call_args.kwargs["stop_on_ap_empty"] is True
+
+
+def test_interlude_runner_cleans_up_direct_story_completion_without_reporting_defeat():
+    ns = load_definitions("fgoTaskQueue.py", {"_run_auto_battle_sync"}, {
+        "fgoKernel": MagicMock(), "logger": MagicMock(),
+    })
+    ns["fgoKernel"].skipStoryToBattle.return_value = "battle"
+    ns["fgoKernel"].Battle.return_value.return_value = None
+    ns["fgoKernel"].skipStoryAfterBattle.return_value = True
+    assert ns["_run_auto_battle_sync"](strict=True) == {"pre_battle": "battle"}
+    ns["fgoKernel"].Battle.assert_called_once_with(idleActionDelay=.5, allowStoryCompletion=True)
+    ns["fgoKernel"].skipStoryAfterBattle.assert_called_once_with(skip_story=True)
+
+
+@pytest.fixture
+def battle_loop():
+    tree = ast.parse((ROOT / "FGO-py" / "fgoKernel.py").read_text(encoding="utf-8"))
+    battle = next(node for node in tree.body if isinstance(node, ast.ClassDef) and node.name == "Battle")
+    ns = {
+        "Turn": MagicMock(), "Detect": MagicMock(), "logger": MagicMock(),
+        "time": SimpleNamespace(time=lambda: 0), "schedule": MagicMock(),
+        "fgoDevice": MagicMock(),
+    }
+    exec(compile(ast.Module(body=[battle], type_ignores=[]), "fgoKernel.py", "exec"), ns)
+
+    def feed(frames):
+        frames = iter(frames)
+        def detect(*args):
+            d = next(frames)
+            ns["Detect"].cache = d
+            return d
+        ns["Detect"].side_effect = detect
+    ns["feed"] = feed
+    return ns
+
+
+@pytest.mark.parametrize("completion", ["story", "skip_confirmation"])
+def test_battle_hands_direct_story_transition_back_to_cleanup(battle_loop, completion):
+    begin = screen(isTurnBegin=True)
+    story = screen(isStorySkip=completion == "story")
+    story.locateStorySkipConfirmButton.return_value = (827, 562) if completion == "skip_confirmation" else None
+    battle_loop["feed"]([begin, story])
+    battle = battle_loop["Battle"](allowStoryCompletion=True)
+    assert battle() is None
+    assert battle.turn == 1
+    assert battle.result["material"] == {}
+    battle_loop["schedule"].checkDefeated.assert_not_called()
+
+
+def test_battle_hands_real_story_skip_dialog_back_to_cleanup(battle_loop, detector):
+    inject_fixture(detector, "interlude-direct-story-skip", (350, 200, 990, 610))
+    pos = detector.locateStorySkipConfirmButton()
+    assert pos is not None
+    begin = screen(isTurnBegin=True)
+    story = screen(locateStorySkipConfirmButton=pos)
+    battle_loop["feed"]([begin, story])
+    assert battle_loop["Battle"](allowStoryCompletion=True)() is None
+
+
+@pytest.mark.parametrize("allow_story_completion", [False, True])
+def test_battle_does_not_treat_initial_story_as_a_completed_battle(battle_loop, allow_story_completion):
+    initial = screen(isStorySkip=True)
+    begin = screen(isTurnBegin=True)
+    finish = screen(isBattleFinished=True, getMaterial={"test_drop": 1})
+    battle_loop["feed"]([initial, begin, finish, finish])
+    battle = battle_loop["Battle"](allowStoryCompletion=allow_story_completion)
+    assert battle() is True
+    assert battle.turn == 1
+    assert battle.result["material"] == {"test_drop": 1}
+
+
+def test_default_battle_still_waits_for_a_result_after_a_story_frame(battle_loop):
+    begin = screen(isTurnBegin=True)
+    story = screen(isStorySkip=True)
+    finish = screen(isBattleFinished=True, getMaterial={})
+    battle_loop["feed"]([begin, story, finish, finish])
+    assert battle_loop["Battle"]()() is True
+    story.isStorySkip.assert_not_called()
+
+
+def test_explicit_defeat_still_takes_precedence_over_story_completion(battle_loop):
+    begin = screen(isTurnBegin=True)
+    defeat = screen(isBattleDefeated=True, isStorySkip=True)
+    battle_loop["feed"]([begin, defeat])
+    assert battle_loop["Battle"](allowStoryCompletion=True)() is False
+    battle_loop["schedule"].checkDefeated.assert_called_once_with()
+    defeat.isStorySkip.assert_not_called()
 
 
 def test_mandatory_support_bypasses_named_support_search():

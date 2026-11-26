@@ -758,8 +758,8 @@ def _run_auto_battle_sync(
         action = "skipping story" if skip_story else "waiting"
         raise TimeoutError(f"Auto battle did not reach a battle screen after {action} within {timeout_s}s")
     if pre_battle == "battle":
-        won = fgoKernel.Battle(idleActionDelay=idle_action_delay_s)()
-        if strict and not won:
+        outcome = fgoKernel.Battle(idleActionDelay=idle_action_delay_s, allowStoryCompletion=True)()
+        if strict and outcome is False:
             raise RuntimeError("Interlude auto battle was defeated")
         if not fgoKernel.skipStoryAfterBattle(skip_story=skip_story):
             if strict:
