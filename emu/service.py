@@ -16,6 +16,7 @@ import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
 
+import psutil
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
@@ -256,10 +257,15 @@ def create_app() -> FastAPI:
         # Use the repo root as cwd for script processes
         import pathlib
         repo_root = pathlib.Path(__file__).parent.parent
-        proc = registry.start(name, instance_index, serial, cwd=repo_root, env={
-            "FGO_LDPLAYER_INSTALL_DIR": str(console.install_dir),
-            "FGO_LDPLAYER_LOCAL_INDEX": str(local_index),
-        })
+        try:
+            proc = await asyncio.to_thread(
+                registry.start, name, instance_index, serial, cwd=repo_root, env={
+                    "FGO_LDPLAYER_INSTALL_DIR": str(console.install_dir),
+                    "FGO_LDPLAYER_LOCAL_INDEX": str(local_index),
+                },
+            )
+        except RuntimeError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
         return {
             "status": proc.status,
             "pid": proc.pid,
@@ -276,6 +282,26 @@ def create_app() -> FastAPI:
 
         success = registry.stop(name, instance_index)
         return {"success": success}
+
+    @app.post("/api/scripts/{name}/force-stop")
+    async def force_stop_script(name: str, request: Request):
+        body = await request.json()
+        instance_index = body.get("instance_index")
+        if type(instance_index) is not int or instance_index < 0:
+            raise HTTPException(status_code=400, detail="A non-negative integer instance_index is required")
+        if registry.get_script(name) is None:
+            raise HTTPException(status_code=404, detail=f"Script '{name}' not found")
+        b = _instance_backend(instance_index)
+        try:
+            pids = await asyncio.to_thread(
+                registry.force_stop, name, instance_index, b.adb_serial(instance_index),
+                Path(__file__).resolve().parent.parent,
+            )
+        except (RuntimeError, ValueError, psutil.Error) as exc:
+            logger.error("Force kill failed for %s on instance %d: %s", name, instance_index, exc)
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        _farming_progress.pop((name, instance_index), None)
+        return {"success": True, "killed_pids": pids}
 
     # --- Farming Progress ---
 

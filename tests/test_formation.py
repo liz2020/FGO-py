@@ -299,6 +299,8 @@ def test_restriction_without_visible_battle_button_routes_to_formation(skip_stor
     })
     namespace["time"].time.return_value = 0
     restriction, battle = MagicMock(), MagicMock()
+    restriction.locateInterludeStart.return_value = None
+    battle.locateInterludeStart.return_value = None
     restriction.isTurnBegin.return_value = False
     restriction.isBattleFinished.return_value = False
     restriction.isBattleDefeated.return_value = False

@@ -77,6 +77,19 @@ on its artwork and UI matching the templates.
 The original asset sources and license exclusions stated above still apply;
 this synchronization does not relicense those assets under AGPL.
 
+## Recovering a stuck FGO-py process
+
+The emulator manager has a **Force kill FGO-py** button on each instance,
+even when it no longer tracks a running script. Confirming it discards that
+instance's running and queued script tasks without stopping the emulator.
+It verifies the script path, device and port before killing matching Python
+processes, including orphaned processes, and checks that the port is released.
+It refuses to kill unrelated port owners or report success after a failed kill.
+Then use **Start FGO-py** to launch a fresh process.
+Starting a new script on an occupied port reports an error instead of silently
+launching another process that cannot bind. Restart the manager after updating
+to load the new force-stop endpoint.
+
 ## Automatic interludes in this fork
 
 The Web UI's **自动过幕间物语** task clears unlocked, unfinished interludes on
@@ -89,6 +102,12 @@ Auto formation waits for its confirmation button and for the dialog to close
 before saving, rather than assuming either page transition completes instantly.
 Story-only interludes confirm **该任务没有战斗 / 任务开始** before entering
 the same story-skipping flow; they do not require a battle screen.
+The **败北后剧情仍会推进 / 是否现在开始挑战关卡** confirmation selects
+**开始**, including in direct auto battle when story skipping is disabled.
+After at least one battle turn, auto battle hands a direct return to story
+back to story cleanup, even when no victory/defeat result screen is shown.
+This transition is not classified as a victory; explicit defeat screens
+still follow the existing defeat handling.
 Consecutive **从者资料更新** notifications are closed without opening servant
 profiles, including after story-only segments and when story skipping is disabled.
 Mandatory single-NPC support takes precedence over the configured support name.

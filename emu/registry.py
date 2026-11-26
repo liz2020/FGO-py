@@ -5,10 +5,14 @@ from __future__ import annotations
 import fnmatch
 import logging
 import os
+import shlex
 import subprocess
 import sys
+import threading
 from dataclasses import dataclass, field
 from pathlib import Path
+
+import psutil
 
 from emu.models import AutomationScript, ScriptProcess
 
@@ -25,6 +29,7 @@ class ScriptRegistry:
     def __init__(self):
         self._scripts: dict[str, AutomationScript] = {}
         self._processes: dict[str, ScriptProcess] = {}  # key: "{script_name}:{index}"
+        self._lifecycle_lock = threading.RLock()
 
     def register(self, script: AutomationScript) -> None:
         """Register an automation script."""
@@ -74,6 +79,17 @@ class ScriptRegistry:
         cwd: Path | None = None,
         env: dict[str, str] | None = None,
     ) -> ScriptProcess:
+        with self._lifecycle_lock:
+            return self._start(script_name, index, adb_serial, cwd, env)
+
+    def _start(
+        self,
+        script_name: str,
+        index: int,
+        adb_serial: str,
+        cwd: Path | None = None,
+        env: dict[str, str] | None = None,
+    ) -> ScriptProcess:
         """Start a script process targeting a specific emulator instance.
 
         Args:
@@ -102,6 +118,11 @@ class ScriptRegistry:
             raise ValueError(f"Unknown script: {script_name}")
 
         port = self.port_for(script_name, index)
+        if owners := self._port_owners(port):
+            raise RuntimeError(
+                f"Port {port} is already occupied (PIDs: {owners}). "
+                "Use Force kill if this instance's FGO-py is stuck."
+            )
         command = script.start_command.format(
             serial=adb_serial,
             port=port,
@@ -172,6 +193,104 @@ class ScriptRegistry:
                     else:
                         proc.status = "stopped"
         return results
+
+    @staticmethod
+    def _port_owners(port: int) -> set[int | None]:
+        return {
+            connection.pid for connection in psutil.net_connections(kind="tcp")
+            if connection.status == psutil.CONN_LISTEN and connection.laddr.port == port
+        }
+
+    @staticmethod
+    def _argument(args: list[str], *names: str) -> str | None:
+        value = None
+        for i, arg in enumerate(args):
+            for name in names:
+                if arg == name:
+                    value = args[i + 1] if i + 1 < len(args) else None
+                if arg.startswith(name + "="):
+                    value = arg.split("=", 1)[1]
+        return value
+
+    def _find_script_processes(
+        self, script_name: str, index: int, adb_serial: str, cwd: Path,
+    ) -> list[psutil.Process]:
+        script = self.get_script(script_name)
+        if script is None:
+            raise ValueError(f"Unknown script: {script_name}")
+        command = shlex.split(script.start_command.format(
+            index=index, port=self.port_for(script_name, index), serial=adb_serial,
+        ), posix=sys.platform != "win32")
+        entry = next((arg.strip('"') for arg in command if arg.strip('"').endswith(".py")), None)
+        device = self._argument(command, "--device", "-d")
+        if entry is None or device is None:
+            raise ValueError("Force kill requires a Python script with an explicit device argument")
+        expected_path = (cwd / entry).resolve()
+        port = str(self.port_for(script_name, index))
+        matches = []
+        for process in psutil.process_iter(["cmdline"]):
+            args = process.info["cmdline"] or []
+            if (
+                len(args) < 2 or not Path(args[0]).stem.casefold().startswith("python")
+                or Path(args[1]).name != expected_path.name
+                or self._argument(args[2:], "--port", "-p") != port
+                or self._argument(args[2:], "--device", "-d") != device
+            ):
+                continue
+            try:
+                entry_path = Path(args[1])
+                if entry_path.is_absolute():
+                    same_script = entry_path.resolve() == expected_path
+                else:
+                    # fgo.py changes cwd to its own directory after starting.
+                    process_cwd = Path(process.cwd()).resolve()
+                    same_script = (
+                        (process_cwd / entry_path).resolve() == expected_path
+                        or process_cwd == expected_path.parent and entry_path == Path(entry)
+                    )
+                if same_script:
+                    matches.append(process)
+            except psutil.NoSuchProcess:
+                logger.debug("Process %d exited during force-kill discovery", process.pid)
+            except psutil.AccessDenied as exc:
+                raise RuntimeError(f"Cannot verify script identity for PID {process.pid}") from exc
+        return matches
+
+    def force_stop(
+        self, script_name: str, index: int, adb_serial: str, cwd: Path,
+    ) -> list[int]:
+        """Kill verified script processes, including ones missing from the registry."""
+        with self._lifecycle_lock:
+            return self._force_stop(script_name, index, adb_serial, cwd)
+
+    def _force_stop(
+        self, script_name: str, index: int, adb_serial: str, cwd: Path,
+    ) -> list[int]:
+        processes = self._find_script_processes(script_name, index, adb_serial, cwd)
+        pids = {process.pid for process in processes}
+        port = self.port_for(script_name, index)
+        if unrelated := self._port_owners(port) - pids:
+            raise RuntimeError(f"Refusing to kill: port {port} has an unverified owner (PIDs: {unrelated})")
+        for process in reversed(processes):
+            try:
+                logger.warning("Force-killing %s on instance %d (pid=%d)", script_name, index, process.pid)
+                process.kill()
+            except psutil.NoSuchProcess:
+                logger.debug("Process %d already exited", process.pid)
+            except psutil.AccessDenied as exc:
+                raise RuntimeError(f"Permission denied killing PID {process.pid}") from exc
+        _, alive = psutil.wait_procs(processes, timeout=5)
+        if alive:
+            raise RuntimeError(f"Script processes did not exit: {[process.pid for process in alive]}")
+        if owners := self._port_owners(port):
+            raise RuntimeError(f"Port {port} is still occupied (PIDs: {owners})")
+        if self._find_script_processes(script_name, index, adb_serial, cwd):
+            raise RuntimeError("Matching script processes are still running; force kill did not finish")
+        process = self._processes.get(self._process_key(script_name, index))
+        if process is not None:
+            process.status = "stopped"
+            process.pid = None
+        return sorted(pids)
 
     def all_processes(self) -> list[ScriptProcess]:
         """Get all tracked processes (running or stopped)."""
