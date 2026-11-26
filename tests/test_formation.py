@@ -89,14 +89,18 @@ def kernel():
     class ScriptStop(Exception):
         pass
 
-    return load_definitions("fgoKernel.py", {"_useAutoFormation", "_advanceStory", "_startFormation"}, {
+    namespace = load_definitions("fgoKernel.py", {"_useAutoFormation", "_advanceStory", "_startFormation"}, {
         "logger": MagicMock(), "fgoDevice": MagicMock(), "schedule": MagicMock(),
         "Detect": MagicMock(), "ScriptStop": ScriptStop,
         "_dismissPreBattlePopup": MagicMock(return_value=False),
         "_confirmBattleStart": MagicMock(),
         "_resolveFormationRestriction": MagicMock(),
         "_dismissFriendRequest": MagicMock(return_value=False),
+        "_clearFormationRestrictions": MagicMock(side_effect=lambda d: d),
     })
+    namespace["Detect"].return_value.isAutoFormationPrompt.return_value = False
+    namespace["Detect"].return_value.locateAutoFormationConfirmButton.return_value = None
+    return namespace
 
 
 def test_open_auto_formation_prompt_is_confirmed_without_reopening(kernel):
@@ -116,10 +120,14 @@ def test_open_auto_formation_prompt_is_confirmed_without_reopening(kernel):
 def test_auto_formation_opens_prompt_then_detects_confirmation(kernel):
     d, prompt = MagicMock(), MagicMock()
     d.isAutoFormationPrompt.return_value = False
+    d.locateAutoFormationConfirmButton.return_value = None
     prompt.isAutoFormationPrompt.return_value = True
     prompt.locateAutoFormationConfirmButton.return_value = (929, 604)
-    prompt.locateFormationDecideButton.return_value = (1168, 668)
-    kernel["Detect"].return_value = prompt
+    decided = MagicMock()
+    decided.isAutoFormationPrompt.return_value = False
+    decided.locateAutoFormationConfirmButton.return_value = None
+    decided.locateFormationDecideButton.return_value = (1168, 668)
+    kernel["Detect"].side_effect = [prompt, decided]
     kernel["_useAutoFormation"](d)
     kernel["fgoDevice"].device.perform.assert_called_once_with("\xDE", (1000,))
     assert kernel["fgoDevice"].device.touch.call_args_list == [
@@ -308,17 +316,167 @@ def test_formation_repair_requires_close_button_before_auto_party(close):
     class ScriptStop(Exception):
         pass
 
-    namespace = load_definitions("fgoKernel.py", {"_fixFormationRestriction"}, {
+    namespace = load_definitions("fgoKernel.py", {"_fixFormationRestriction", "_clearFormationRestrictions"}, {
         "logger": MagicMock(), "Detect": MagicMock(), "fgoDevice": MagicMock(),
-        "_useAutoFormation": MagicMock(), "ScriptStop": ScriptStop,
+        "_useAutoFormation": MagicMock(), "ScriptStop": ScriptStop, "schedule": MagicMock(),
     })
-    namespace["Detect"].return_value.locateFormationRestrictionCloseButton.return_value = close
+    restriction, cleared = MagicMock(), MagicMock()
+    restriction.isBattleFormationRestriction.return_value = True
+    restriction.locateFormationRestrictionCloseButton.return_value = close
+    cleared.isBattleFormationRestriction.return_value = False
+    namespace["Detect"].side_effect = [restriction, cleared]
     if close:
         namespace["_fixFormationRestriction"]()
-        namespace["fgoDevice"].device.touch.assert_called_once_with(close, 500)
-        namespace["_useAutoFormation"].assert_called_once_with()
+        namespace["fgoDevice"].device.touch.assert_called_once_with(close, 700)
+        namespace["_useAutoFormation"].assert_called_once_with(cleared)
     else:
         with pytest.raises(ScriptStop, match="close button not found"):
             namespace["_fixFormationRestriction"]()
         namespace["fgoDevice"].device.touch.assert_not_called()
         namespace["_useAutoFormation"].assert_not_called()
+
+
+@pytest.fixture
+def stacked_formation():
+    class ScriptStop(Exception):
+        pass
+
+    return load_definitions("fgoKernel.py", {
+        "_clearFormationRestrictions", "_useAutoFormation", "_fixFormationRestriction",
+    }, {
+        "logger": MagicMock(), "Detect": MagicMock(), "fgoDevice": MagicMock(),
+        "schedule": MagicMock(), "ScriptStop": ScriptStop,
+    })
+
+
+def formation_screen(*, restriction=False, prompt=False, close=(639, 600)):
+    d = MagicMock()
+    d.isBattleFormationRestriction.return_value = restriction
+    d.locateFormationRestrictionCloseButton.return_value = close
+    d.isAutoFormationPrompt.return_value = prompt
+    d.locateAutoFormationConfirmButton.return_value = (929, 604) if prompt else None
+    d.locateFormationDecideButton.return_value = (1168, 668)
+    return d
+
+
+def test_stacked_conditions_are_all_closed_before_auto_formation(stacked_formation):
+    first, second = formation_screen(restriction=True), formation_screen(restriction=True)
+    prompt, decided = formation_screen(prompt=True), formation_screen()
+    stacked_formation["Detect"].side_effect = [first, second, prompt, decided]
+    stacked_formation["_fixFormationRestriction"]()
+    assert stacked_formation["fgoDevice"].device.touch.call_args_list == [
+        call((639, 600), 700), call((639, 600), 700),
+        call((929, 604)), call((1168, 668), 1000),
+    ]
+    stacked_formation["fgoDevice"].device.perform.assert_not_called()
+
+
+def test_conditions_after_auto_formation_are_closed_before_decide(stacked_formation):
+    prompt = formation_screen(prompt=True)
+    condition, decided = formation_screen(restriction=True), formation_screen()
+    stacked_formation["Detect"].side_effect = [condition, decided]
+    stacked_formation["_useAutoFormation"](prompt)
+    assert stacked_formation["fgoDevice"].device.touch.call_args_list == [
+        call((929, 604)), call((639, 600), 700), call((1168, 668), 1000),
+    ]
+
+
+def test_auto_formation_waits_for_confirm_button_without_reopening(stacked_formation):
+    opening = formation_screen(prompt=True)
+    opening.locateAutoFormationConfirmButton.return_value = None
+    prompt, decided = formation_screen(prompt=True), formation_screen()
+    stacked_formation["Detect"].side_effect = [opening, prompt, decided]
+    stacked_formation["_useAutoFormation"](formation_screen())
+    stacked_formation["fgoDevice"].device.perform.assert_called_once_with("\xDE", (1000,))
+    assert stacked_formation["fgoDevice"].device.touch.call_args_list == [
+        call((929, 604)), call((1168, 668), 1000),
+    ]
+
+
+def test_auto_formation_accepts_button_while_heading_ocr_is_missing(stacked_formation):
+    prompt, decided = formation_screen(), formation_screen()
+    prompt.locateAutoFormationConfirmButton.return_value = (929, 604)
+    stacked_formation["Detect"].return_value = decided
+    stacked_formation["_useAutoFormation"](prompt)
+    stacked_formation["fgoDevice"].device.perform.assert_not_called()
+    assert stacked_formation["fgoDevice"].device.touch.call_args_list == [
+        call((929, 604)), call((1168, 668), 1000),
+    ]
+
+
+def test_auto_formation_waits_until_prompt_disappears_before_decide(stacked_formation):
+    prompt, decided = formation_screen(prompt=True), formation_screen()
+    stacked_formation["Detect"].side_effect = [prompt, decided]
+    stacked_formation["_useAutoFormation"](prompt)
+    prompt.locateFormationDecideButton.assert_not_called()
+    assert stacked_formation["fgoDevice"].device.touch.call_args_list == [
+        call((929, 604)), call((1168, 668), 1000),
+    ]
+
+
+def test_missing_heading_does_not_allow_saving_behind_visible_confirm_dialog(stacked_formation):
+    prompt, decided = formation_screen(), formation_screen()
+    prompt.locateAutoFormationConfirmButton.return_value = (929, 604)
+    stacked_formation["Detect"].side_effect = [prompt, decided]
+    stacked_formation["_useAutoFormation"](prompt)
+    prompt.locateFormationDecideButton.assert_not_called()
+    assert stacked_formation["fgoDevice"].device.touch.call_args_list == [
+        call((929, 604)), call((1168, 668), 1000),
+    ]
+
+
+def test_confirm_button_wait_is_bounded_without_blind_taps(stacked_formation):
+    opening = formation_screen(prompt=True)
+    opening.locateAutoFormationConfirmButton.return_value = None
+    stacked_formation["Detect"].return_value = opening
+    with pytest.raises(stacked_formation["ScriptStop"], match="confirmation button not found"):
+        stacked_formation["_useAutoFormation"](opening)
+    assert stacked_formation["Detect"].call_count == 9
+    stacked_formation["fgoDevice"].device.touch.assert_not_called()
+    stacked_formation["fgoDevice"].device.perform.assert_not_called()
+
+
+def test_decide_wait_is_bounded_without_confirming_visible_background_button(stacked_formation):
+    prompt = formation_screen(prompt=True)
+    stacked_formation["Detect"].return_value = prompt
+    with pytest.raises(stacked_formation["ScriptStop"], match="decide button not found"):
+        stacked_formation["_useAutoFormation"](prompt)
+    assert stacked_formation["Detect"].call_count == 10
+    prompt.locateFormationDecideButton.assert_not_called()
+    stacked_formation["fgoDevice"].device.touch.assert_called_once_with((929, 604))
+
+
+def test_auto_formation_opens_only_after_last_condition(stacked_formation):
+    condition, party, prompt, decided = (
+        formation_screen(restriction=True), formation_screen(),
+        formation_screen(prompt=True), formation_screen(),
+    )
+    stacked_formation["Detect"].side_effect = [party, prompt, decided]
+    actions = MagicMock()
+    actions.attach_mock(stacked_formation["fgoDevice"].device.touch, "touch")
+    actions.attach_mock(stacked_formation["fgoDevice"].device.perform, "perform")
+    stacked_formation["_useAutoFormation"](condition)
+    assert actions.mock_calls == [
+        call.touch((639, 600), 700), call.perform("\xDE", (1000,)),
+        call.touch((929, 604)), call.touch((1168, 668), 1000),
+    ]
+
+
+def test_repeated_conditions_are_bounded_without_starting_formation(stacked_formation):
+    condition = formation_screen(restriction=True)
+    stacked_formation["Detect"].return_value = condition
+    with pytest.raises(stacked_formation["ScriptStop"], match="10 dismissals"):
+        stacked_formation["_useAutoFormation"](condition)
+    assert stacked_formation["fgoDevice"].device.touch.call_args_list == [call((639, 600), 700)] * 10
+    stacked_formation["fgoDevice"].device.perform.assert_not_called()
+
+
+def test_cancellation_between_condition_dialogs_stops_before_next_click(stacked_formation):
+    condition = formation_screen(restriction=True)
+    stacked_formation["Detect"].return_value = condition
+    stacked_formation["schedule"].checkStop.side_effect = [
+        None, stacked_formation["ScriptStop"]("cancelled"),
+    ]
+    with pytest.raises(stacked_formation["ScriptStop"], match="cancelled"):
+        stacked_formation["_useAutoFormation"](condition)
+    stacked_formation["fgoDevice"].device.touch.assert_called_once_with((639, 600), 700)

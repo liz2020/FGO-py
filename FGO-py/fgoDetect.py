@@ -202,6 +202,67 @@ class XDetectBase(metaclass=logMeta(logger)):
             if 0<=pos[0]<rect[2]-rect[0]and 0<=pos[1]<rect[3]-rect[1]:
                 return(rect[0]+int(pos[0]),rect[1]+int(pos[1]))
         return None
+    def _locateInterludeLabel(self,labels,rect):
+        for result in self.ocr.detect_and_ocr(self._crop(rect)):
+            if re.sub(r'\s+','',result.text)in labels:
+                center=numpy.mean(result.box,axis=0)
+                return(int(center[0])+rect[0],int(center[1])+rect[1])
+        return None
+    def isInterludeList(self):
+        return '幕间物语'in re.sub(r'\s+','',''.join(self.ocr.ocrArea(self._crop((960,0,1280,85)))))
+    def locateInterludeEntrance(self):
+        return self._locateInterludeLabel({'幕间物语','迦勒底之门'},(650,95,1210,590))
+    def locateInterludeReturn(self):
+        return self._locateInterludeLabel({'前往幕间物语','返回幕间','返回幕间物语'},(0,80,220,190))
+    def locateInterludeStart(self):
+        text=re.sub(r'\s+','',''.join(self.ocr.ocrArea(self._crop((350,230,930,520)))))
+        if '是否开始关卡'in text:
+            labels={'开始'}
+        elif '该任务没有战斗'in text and'是否开始任务'in text:
+            labels={'任务开始'}
+        else:
+            return None
+        return self._locateInterludeLabel(labels,(700,510,990,610))
+    def isInterludeListEnd(self):return self._isListEnd((1258,584))
+    def getInterludeEntries(self):
+        """Recognize quest rows, excluding dim locked rows and completed rewards."""
+        rect=(775,95,946,590)
+        scores=cv2.matchTemplate(self._crop(rect),self.tmpl.INTERLUDELABEL[0],cv2.TM_SQDIFF_NORMED,mask=self.tmpl.INTERLUDELABEL[1])
+        count,_,stats,_=cv2.connectedComponentsWithStats((scores<.02).astype(numpy.uint8))
+        anchors=[]
+        for stat in stats[1:count]:
+            top,height=int(stat[1]),int(stat[3])
+            y=rect[1]+top+int(numpy.argmin(scores[top:top+height]))+9
+            anchors.append((y,False))
+        for result in self.ocr.detect_and_ocr(self._crop((775,95,1120,590))):
+            if re.sub(r'\s+','',result.text)in{'前往故事的舞台','前往故事舞台'}:
+                anchors.append((95+int(numpy.mean(result.box,axis=0)[1]),True))
+        entries=[]
+        for y,stage in sorted(anchors):
+            title_y=y-(68 if stage else 28)
+            if title_y<110 or y+(25 if stage else 55)>590:
+                continue
+            title_rect=(775,title_y-16,1110,title_y+16)
+            if numpy.mean(self._crop(title_rect))<95:
+                continue
+            name=re.sub(r'\s+','',self._ocrText(title_rect))
+            if not name:
+                raise ValueError('Interlude row title could not be read')
+            status=[re.sub(r'[\s-]+','',text)for text in self.ocr.ocrArea(self._crop((775,title_y+18,1200,min(590,y+70))))]
+            if any(text in{'已获取','完成','已完成'}or any(label in text for label in('后开放','后解锁','未开放','未解锁'))for text in status):
+                continue
+            progress=''
+            if not stage:
+                arrows=self._crop((900,y+20,1030,y+58)).astype(numpy.int16)
+                progress=str(int(numpy.mean(arrows[...,0]-arrows[...,2]>30)*20))
+            entries.append({'name':name,'stage':stage,'target':(950,y),'progress':progress})
+        return entries
+    def locateForcedSupport(self):
+        rows=((150,190,1140,250),(150,375,1140,435),(150,555,1140,615))
+        texts=[re.sub(r'\s+','',''.join(self.ocr.ocrArea(self._crop(rect))))for rect in rows]
+        if ('客将从者'in texts[0]or'客將從者'in texts[0])and not any(texts[1:]):
+            return(845,203)
+        return None
     def isQuestListBegin(self):return self._isListBegin((1258,95))
     def isServantDead(self,pos,friend=None):return any((self._watchServantPortrait[pos].send(self),self._watchServantFriend[pos].send(self.isServantFriend(pos)if friend is None else friend)))
     def isServantFriend(self,pos):return self._compare(self.tmpl.SUPPORT,(187+318*pos,394,225+318*pos,412))

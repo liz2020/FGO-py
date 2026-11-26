@@ -77,6 +77,24 @@ on its artwork and UI matching the templates.
 The original asset sources and license exclusions stated above still apply;
 this synchronization does not relicense those assets under AGPL.
 
+## Automatic interludes in this fork
+
+The Web UI's **自动过幕间物语** task clears unlocked, unfinished interludes on
+the CN client. It enters through Terminal -> Chaldea Gate -> Interlude, follows
+**前往故事的舞台**, and returns through **前往幕间物语** after each segment.
+Story skipping, formation and battles reuse the existing auto-battle runner.
+Consecutive formation-condition dialogs are dismissed individually before
+auto formation and before saving the party, with a bounded retry limit.
+Auto formation waits for its confirmation button and for the dialog to close
+before saving, rather than assuming either page transition completes instantly.
+Story-only interludes confirm **该任务没有战斗 / 任务开始** before entering
+the same story-skipping flow; they do not require a battle screen.
+Mandatory single-NPC support takes precedence over the configured support name.
+The task stops when no available interludes remain, or reports an error on
+navigation/cleanup timeout, defeat or stalled progress. It does not consume
+apples or quartz for AP recovery. Start on a navigation screen, not in a
+resource-recovery dialog or an unrelated quest.
+
 ## Ordeal Call free quests in this fork
 
 The quest catalog includes Ordeal Call II (12 free quests), III (15), and IV (13).

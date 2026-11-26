@@ -470,6 +470,38 @@ class TaskWorker(threading.Thread):
                     idle_action_delay_s=idle_action_delay_s,
                     support_name=support_name,
                 )
+            case "auto_interlude":
+                timeout_s = int(task.params.get("timeout_s", 180))
+                navigation_timeout_s = int(task.params.get("navigation_timeout_s", 60))
+                delay = _parse_idle_action_delay(task.params.get("idle_action_delay_s", 0.5))
+                if timeout_s <= 0 or navigation_timeout_s <= 0:
+                    raise ValueError("Interlude timeouts must be positive")
+                passes = 0
+                seen = {}
+                while True:
+                    result = fgoKernel.findNextInterlude(
+                        timeout_s=navigation_timeout_s,
+                        on_progress=lambda detail: _report_progress(passes, 0, "running", detail),
+                    )
+                    if not result["ready"]:
+                        _report_progress(passes, passes, "done", "All available interludes complete")
+                        return {"segments": passes, "exhausted": True}
+                    entry = result["entry"]
+                    if entry:
+                        key = (entry["name"], entry["progress"])
+                        seen[key] = seen.get(key, 0) + 1
+                        if seen[key] > 3:
+                            raise RuntimeError(f"Interlude made no visible progress: {entry['name']}")
+                    _report_progress(passes, 0, "running", f"Auto battle: {entry['name'] if entry else 'current interlude'}")
+                    _run_auto_battle_sync(
+                        auto_select_support=True,
+                        skip_story=True,
+                        timeout_s=timeout_s,
+                        idle_action_delay_s=delay,
+                        support_name=str(task.params.get("support_name", "")).strip(),
+                        strict=True,
+                    )
+                    passes += 1
             case "wait":
                 minutes = task.params.get("minutes", 1)
                 logger.info(f"Waiting {minutes} minutes")
@@ -712,6 +744,7 @@ def _run_auto_battle_sync(
     timeout_s: int = 180,
     idle_action_delay_s: float = 0.5,
     support_name: str = "",
+    strict: bool = False,
 ):
     fgoKernel.fuse.reset()
     pre_battle = fgoKernel.skipStoryToBattle(
@@ -719,13 +752,18 @@ def _run_auto_battle_sync(
         auto_select_support=auto_select_support,
         skip_story=skip_story,
         support_name=support_name.strip(),
+        stop_on_ap_empty=strict,
     )
     if pre_battle == "timeout":
         action = "skipping story" if skip_story else "waiting"
         raise TimeoutError(f"Auto battle did not reach a battle screen after {action} within {timeout_s}s")
     if pre_battle == "battle":
-        fgoKernel.Battle(idleActionDelay=idle_action_delay_s)()
+        won = fgoKernel.Battle(idleActionDelay=idle_action_delay_s)()
+        if strict and not won:
+            raise RuntimeError("Interlude auto battle was defeated")
         if not fgoKernel.skipStoryAfterBattle(skip_story=skip_story):
+            if strict:
+                raise TimeoutError("Interlude post-battle cleanup timed out")
             logger.warning("Auto battle did not finish post-battle story cleanup before timeout")
     else:
         logger.info("Auto battle completed without a battle screen")
