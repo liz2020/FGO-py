@@ -104,10 +104,13 @@ Story-only interludes confirm **该任务没有战斗 / 任务开始** before en
 the same story-skipping flow; they do not require a battle screen.
 The **败北后剧情仍会推进 / 是否现在开始挑战关卡** confirmation selects
 **开始**, including in direct auto battle when story skipping is disabled.
-After at least one battle turn, auto battle hands a direct return to story
-back to story cleanup, even when no victory/defeat result screen is shown.
+After at least one battle turn, auto battle hands a direct return to story,
+the main interface or the interlude list back to cleanup, even when no
+victory/defeat result screen is shown.
 This transition is not classified as a victory; explicit defeat screens
-still follow the existing defeat handling.
+still follow the existing defeat handling. The interlude list is also a
+pre-/post-battle endpoint, so cleanup does not keep tapping the top bar or
+advancing story on the list before interlude navigation resumes.
 Consecutive **从者资料更新** notifications are closed without opening servant
 profiles, including after story-only segments and when story skipping is disabled.
 Mandatory single-NPC support takes precedence over the configured support name.

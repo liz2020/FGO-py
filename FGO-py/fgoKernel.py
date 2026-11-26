@@ -521,8 +521,11 @@ class Battle:
                 logger.warning('Battle Defeated')
                 schedule.checkDefeated()
                 return False
-            elif self.allowStoryCompletion and self.turn and(Detect.cache.isStorySkip()or Detect.cache.locateStorySkipConfirmButton()):
-                logger.info('Battle returned directly to story without a victory or defeat result')
+            elif self.allowStoryCompletion and self.turn and(
+                Detect.cache.isMainInterface()or Detect.cache.isInterludeList()
+                or Detect.cache.isStorySkip()or Detect.cache.locateStorySkipConfirmButton()
+            ):
+                logger.info('Battle returned directly to story or navigation without a victory or defeat result')
                 return None
             fgoDevice.device.perform('\xBB\x08',(100,100))
             if self.idleActionDelay:schedule.sleep(self.idleActionDelay)
@@ -575,7 +578,7 @@ def skipStoryToBattle(timeout_s=180, auto_select_support=True, support_name='', 
                 return 'done'
             _selectSupport(support_name)
             continue
-        if d.isMainInterface()or d.isBattleContinue():
+        if d.isMainInterface()or d.isInterludeList()or d.isBattleContinue():
             return 'done'
         if d.isBattleFormationRestriction()or d.isAutoFormationPrompt()or d.isBattleFormation():
             _startFormation(d)
@@ -599,7 +602,7 @@ def skipStoryAfterBattle(timeout_s=90, skip_story=True):
         d=Detect(0,.3)
         if _dismissServantUpdate(d):
             continue
-        if d.isMainInterface()or d.isBattleContinue()or d.isBattleFormation()or d.isChooseFriend()or d.isTurnBegin():
+        if d.isMainInterface()or d.isInterludeList()or d.isBattleContinue()or d.isBattleFormation()or d.isChooseFriend()or d.isTurnBegin():
             return True
         if _dismissFriendRequest(d):
             continue

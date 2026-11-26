@@ -244,7 +244,7 @@ def test_post_battle_ends_friend_request_even_without_story_skip(skip_story):
     })
     namespace["time"].time.return_value = 0
     request, done = MagicMock(), MagicMock()
-    for method in ("isMainInterface", "isBattleContinue", "isBattleFormation",
+    for method in ("isMainInterface", "isInterludeList", "isBattleContinue", "isBattleFormation",
                    "isChooseFriend", "isTurnBegin"):
         getattr(request, method).return_value = False
     request.locateFriendRequestEndButton.return_value = (330, 620)
@@ -306,6 +306,7 @@ def test_restriction_without_visible_battle_button_routes_to_formation(skip_stor
     restriction.isBattleDefeated.return_value = False
     restriction.isChooseFriend.return_value = False
     restriction.isMainInterface.return_value = False
+    restriction.isInterludeList.return_value = False
     restriction.isBattleContinue.return_value = False
     restriction.isBattleFormation.return_value = False
     restriction.isBattleFormationRestriction.return_value = True
