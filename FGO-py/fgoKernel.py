@@ -466,7 +466,7 @@ class Turn:
                 +(1.8 if colorChain==-1 else 3)*(not chainError and len({group[i]for i in card})==1)*resist[card[0]]
                 +2.3*(colorChain==0)*len({group[i]for i in card if i<5 and np[group[i]]})
                 +3*(colorChain==1)
-            )(7 if colorChain==3 else 1<<color[0]))(-1 if chainError else{(0,):0,(1):1,(2,):2,(0,1,2):3}.get(tuple(set(color[i]for i in card)),-1)))(any(sealed[i]for i in card if i<5))
+            )(7 if colorChain==3 else 1<<color[card[0]]))(-1 if chainError else{(0,):0,(1,):1,(2,):2,(0,1,2):3}.get(tuple(set(color[i]for i in card)),-1)))(any(sealed[i]for i in card if i<5))
         card=list(max(permutations(range(5),3-len(hougu)),key=lambda x:evaluate(hougu+list(x))))
         return''.join(['12345678'[i]for i in hougu+card+list({0,1,2,3,4}-set(card))])
     def castServantSkill(self,pos,skill,target):
