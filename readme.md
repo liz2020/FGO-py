@@ -114,6 +114,10 @@ advancing story on the list before interlude navigation resumes.
 Consecutive **从者资料更新** notifications are closed without opening servant
 profiles, including after story-only segments and when story skipping is disabled.
 Mandatory single-NPC support takes precedence over the configured support name.
+If selecting a list entry does not open it, navigation retries up to three
+total clicks, waiting for the interactive list and re-reading the same entry
+and its coordinates each time. Missing entries or changed quest types stop the task;
+unrecognized pages are not blindly tapped.
 The task stops when no available interludes remain, or reports an error on
 navigation/cleanup timeout, defeat or stalled progress. It does not consume
 apples or quartz for AP recovery. Start on a navigation screen, not in a

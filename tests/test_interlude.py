@@ -167,6 +167,7 @@ def navigation():
         "time": SimpleNamespace(monotonic=lambda: next(ticks)),
         "XDetect": SimpleNamespace(region="CN"),
         "schedule": MagicMock(), "fgoDevice": MagicMock(), "Detect": MagicMock(),
+        "logger": MagicMock(),
         "_dismissServantUpdate": MagicMock(return_value=False),
     })
 
@@ -241,6 +242,57 @@ def test_failed_selection_times_out_instead_of_reporting_exhaustion(navigation):
     feed_navigation(navigation, [listing])
     with pytest.raises(TimeoutError, match="known endpoint"):
         navigation["findNextInterlude"](timeout_s=1)
+    navigation["fgoDevice"].device.touch.assert_called_once()
+
+
+def selection_retry_clock(navigation):
+    ticks = count()
+    navigation["time"].monotonic = lambda: next(ticks)
+
+
+def test_ignored_list_click_retries_the_same_entry_with_fresh_coordinates(navigation):
+    selection_retry_clock(navigation)
+    chosen = entry()
+    moved = {**chosen, "target": (950, 350), "progress": "8"}
+    other = {**entry(), "name": "another interlude"}
+    listing = screen(isInterludeList=True, isMainInterface=True, isQuestListBegin=True, getInterludeEntries=[chosen])
+    unchanged = screen(isInterludeList=True, isMainInterface=True, getInterludeEntries=[other, moved])
+    feed_navigation(navigation, [listing, unchanged, screen(isChooseFriend=True)])
+    assert navigation["findNextInterlude"]() == {"ready": True, "entry": moved}
+    assert navigation["fgoDevice"].device.touch.call_args_list == [
+        call(chosen["target"], 1200), call(moved["target"], 1200),
+    ]
+
+
+def test_retries_wait_for_interactive_list_instead_of_tapping_during_transition(navigation):
+    selection_retry_clock(navigation)
+    listing = screen(isInterludeList=True, isMainInterface=True, isQuestListBegin=True, getInterludeEntries=[entry()])
+    transition = screen(isInterludeList=True)
+    feed_navigation(navigation, [listing, transition, listing, screen(isChooseFriend=True)])
+    assert navigation["findNextInterlude"]()["ready"]
+    transition.getInterludeEntries.assert_not_called()
+    assert navigation["fgoDevice"].device.touch.call_args_list == [call((950, 170), 1200)] * 2
+
+
+def test_persistent_list_click_failure_is_bounded_to_three_attempts(navigation):
+    selection_retry_clock(navigation)
+    listing = screen(isInterludeList=True, isMainInterface=True, isQuestListBegin=True, getInterludeEntries=[entry()])
+    feed_navigation(navigation, [listing])
+    with pytest.raises(TimeoutError, match="3 attempts"):
+        navigation["findNextInterlude"]()
+    assert navigation["fgoDevice"].device.touch.call_count == 3
+
+
+@pytest.mark.parametrize("changed", [
+    [], [{**entry(), "name": "another interlude"}], [entry(stage=True)],
+])
+def test_selection_retry_rejects_missing_or_changed_entry(navigation, changed):
+    selection_retry_clock(navigation)
+    listing = screen(isInterludeList=True, isMainInterface=True, isQuestListBegin=True, getInterludeEntries=[entry()])
+    changed_list = screen(isInterludeList=True, isMainInterface=True, getInterludeEntries=changed)
+    feed_navigation(navigation, [listing, changed_list])
+    with pytest.raises(RuntimeError, match="Selected interlude"):
+        navigation["findNextInterlude"]()
     navigation["fgoDevice"].device.touch.assert_called_once()
 
 

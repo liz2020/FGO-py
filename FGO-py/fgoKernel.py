@@ -841,6 +841,8 @@ def findNextInterlude(timeout_s=60,on_progress=None):
     notify=on_progress if callable(on_progress)else lambda _:None
     deadline=time.monotonic()+timeout_s
     selected=None
+    selection_attempts=0
+    retry_at=0
     rewind=True
     terminal=False
     scrolls=0
@@ -885,6 +887,21 @@ def findNextInterlude(timeout_s=60,on_progress=None):
         waiting_return=False
         if d.isInterludeList():
             if selected:
+                if time.monotonic()<retry_at or not d.isMainInterface():
+                    continue
+                current=next((item for item in d.getInterludeEntries()if item['name']==selected['name']),None)
+                if current is None:
+                    raise RuntimeError(f"Selected interlude is no longer visible: {selected['name']}")
+                if current['stage']!=selected['stage']:
+                    raise RuntimeError(f"Selected interlude changed before it opened: {selected['name']}")
+                if selection_attempts>=3:
+                    raise TimeoutError(f"Interlude did not open after 3 attempts: {selected['name']}")
+                selection_attempts+=1
+                selected=current
+                logger.warning('Interlude selection stayed on the list; retrying %s (%d/3)',selected['name'],selection_attempts)
+                notify(f"Retrying interlude selection {selection_attempts}/3: {selected['name']}")
+                fgoDevice.device.touch(selected['target'],1200)
+                retry_at=time.monotonic()+2
                 continue
             if rewind and not d.isQuestListBegin():
                 notify('Rewinding interlude list')
@@ -896,6 +913,8 @@ def findNextInterlude(timeout_s=60,on_progress=None):
                     selected=entries[0]
                     notify(f"Opening interlude: {selected['name']}")
                     fgoDevice.device.touch(selected['target'],1200)
+                    selection_attempts=1
+                    retry_at=time.monotonic()+2
                 elif d.isInterludeListEnd():
                     notify('No unlocked unfinished interludes remain')
                     return {'ready':False,'entry':None}
