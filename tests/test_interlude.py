@@ -21,6 +21,7 @@ DETECTORS = {
     "locateInterludeReturn", "locateInterludeStart", "isInterludeListEnd",
     "getInterludeEntries", "locateForcedSupport",
     "_loc", "_isListEnd",
+    "locateServantUpdateCloseButton",
 }
 
 
@@ -154,6 +155,7 @@ def navigation():
         "time": SimpleNamespace(monotonic=lambda: next(ticks)),
         "XDetect": SimpleNamespace(region="CN"),
         "schedule": MagicMock(), "fgoDevice": MagicMock(), "Detect": MagicMock(),
+        "_dismissServantUpdate": MagicMock(return_value=False),
     })
 
 
@@ -313,3 +315,68 @@ def test_pre_battle_ap_recovery_stops_before_story_actions():
     with pytest.raises(RuntimeError, match="not enough AP"):
         ns["skipStoryToBattle"](stop_on_ap_empty=True)
     ns["_advanceStory"].assert_not_called()
+
+
+def test_real_servant_update_targets_close_not_profile(detector):
+    inject_fixture(detector, "interlude-servant-update", (220, 230, 930, 620))
+    pos = detector.locateServantUpdateCloseButton()
+    assert pos is not None
+    assert 400 < pos[0] < 480 and 530 < pos[1] < 590
+
+
+@pytest.mark.parametrize("heading,button,found", [
+    ("弗拉德三世的从者资料更新！", "关闭", True),
+    ("從者資料更新！", "關閉", True),
+    ("从者资料更新！", "确认简介", False),
+    ("是否跳过剧情？", "关闭", False),
+    ("资料更新", "关闭", False),
+])
+def test_servant_update_requires_matching_message_and_close_label(detector, heading, button, found):
+    detector.ocr = MagicMock()
+    detector.ocr.ocrArea.return_value = [heading]
+    detector.ocr.detect_and_ocr.return_value = [
+        SimpleNamespace(text=button, box=numpy.array([[180, 30], [260, 30], [260, 70], [180, 70]])),
+    ]
+    assert (detector.locateServantUpdateCloseButton() is not None) is found
+    if "从者资料更新" not in heading and "從者資料更新" not in heading:
+        detector.ocr.detect_and_ocr.assert_not_called()
+
+
+@pytest.mark.parametrize("flow", [
+    "skipStoryToBattle", "skipStoryAfterBattle", "_advanceBattleResult", "findNextInterlude",
+])
+@pytest.mark.parametrize("skip_story", [False, True])
+def test_consecutive_servant_updates_are_closed_before_endpoint_detection(flow, skip_story):
+    ticks = count(step=.1)
+    ns = load_definitions("fgoKernel.py", {flow, "_dismissServantUpdate"}, {
+        "time": SimpleNamespace(time=lambda: next(ticks), monotonic=lambda: next(ticks)),
+        "schedule": MagicMock(), "Detect": MagicMock(), "fgoDevice": MagicMock(),
+        "logger": MagicMock(), "XDetect": SimpleNamespace(region="CN"),
+        "_advanceStory": MagicMock(), "_dismissFriendRequest": MagicMock(return_value=False),
+    })
+    updates = [screen(isTurnBegin=True) for _ in range(3)]
+    for update in updates:
+        update.locateServantUpdateCloseButton.return_value = (440, 562)
+    done = screen(isTurnBegin=True)
+    done.locateServantUpdateCloseButton.return_value = None
+    ns["Detect"].side_effect = updates + [done]
+    kwargs = {"skip_story": skip_story} if flow in {"skipStoryToBattle", "skipStoryAfterBattle"} else {}
+    ns[flow](**kwargs)
+    assert ns["fgoDevice"].device.touch.call_args_list == [call((440, 562), 700)] * 3
+    ns["fgoDevice"].device.perform.assert_not_called()
+    ns["_advanceStory"].assert_not_called()
+    for update in updates:
+        update.isTurnBegin.assert_not_called()
+
+
+def test_servant_update_wait_respects_navigation_timeout():
+    ticks = count(step=.1)
+    ns = load_definitions("fgoKernel.py", {"findNextInterlude", "_dismissServantUpdate"}, {
+        "time": SimpleNamespace(monotonic=lambda: next(ticks)), "schedule": MagicMock(),
+        "Detect": MagicMock(), "fgoDevice": MagicMock(), "logger": MagicMock(),
+        "XDetect": SimpleNamespace(region="CN"),
+    })
+    ns["Detect"].return_value.locateServantUpdateCloseButton.return_value = (440, 562)
+    with pytest.raises(TimeoutError):
+        ns["findNextInterlude"](timeout_s=1)
+    assert 0 < ns["fgoDevice"].device.touch.call_count <= 10

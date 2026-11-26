@@ -89,6 +89,8 @@ Auto formation waits for its confirmation button and for the dialog to close
 before saving, rather than assuming either page transition completes instantly.
 Story-only interludes confirm **该任务没有战斗 / 任务开始** before entering
 the same story-skipping flow; they do not require a battle screen.
+Consecutive **从者资料更新** notifications are closed without opening servant
+profiles, including after story-only segments and when story skipping is disabled.
 Mandatory single-NPC support takes precedence over the configured support name.
 The task stops when no available interludes remain, or reports an error on
 navigation/cleanup timeout, defeat or stalled progress. It does not consume
