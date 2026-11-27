@@ -330,15 +330,32 @@ class Turn:
             self.stageTotal=Detect.cache.getStageTotal()
             self.servant=[(lambda x:(x,)+servantData.get(x,(0,0,0,0,(0,0),((0,0),(0,0),(0,0)))))(Detect.cache.getFieldServant(i))for i in range(3)]
         else:
-            for i in(i for i in range(3)if Detect.cache.isServantDead(i)):
+            for i in(i for i in range(3)if Detect.cache.isServantDead(i)or not self.servant[i][0]):
                 self.servant[i]=(lambda x:(x,)+servantData.get(x,(0,0,0,0,(0,0),((0,0),(0,0),(0,0)))))(Detect.cache.getFieldServant(i))
                 self.countDown[0][i]=[0,0,0]
+        self._retryUnknownServants()
         logger.info(f'Turn {turn} Stage {self.stage} StageTurn {self.stageTurn} {[i[0]for i in self.servant]}')
         if self.stageTurn==1:Detect.cache.setupEnemyGird()
         self.enemy=[Detect.cache.getEnemyHp(i)for i in range(6)]
         self.dispatchSkill()
         fgoDevice.device.perform(' ',(2100,))
         fgoDevice.device.perform(self.selectCard(),(300,300,2300,1300,6000))
+    def _retryUnknownServants(self):
+        for attempt in range(3):
+            known=any(i[0]for i in self.servant)
+            pending=[i for i in range(3)if not self.servant[i][0]and(not known or Detect.cache.getFieldServantHp(i)>0)]
+            if not pending:break
+            if attempt==2:
+                logger.warning(f'Servant recognition still unresolved in slots {pending} after 3 attempts')
+                break
+            logger.warning(f'Retrying servant recognition in slots {pending}, retry {attempt+1}/2')
+            Detect(.5)
+            for i in pending:
+                self.servant[i]=(lambda x:(x,)+servantData.get(x,(0,0,0,0,(0,0),((0,0),(0,0),(0,0)))))(Detect.cache.getFieldServant(i))
+            Detect.cache.setupServantDead()
+        if not any(i[0]for i in self.servant):
+            logger.error('No servant identified after 3 recognition attempts; refusing to select cards')
+            raise RuntimeError('No servant identified after 3 recognition attempts')
     def dispatchSkill(self):
         self.countDown=[[[max(0,j-1)for j in i]for i in self.countDown[0]],[max(0,i-1)for i in self.countDown[1]]]
         if self.normalAttackOnly:return
@@ -443,7 +460,11 @@ class Turn:
                 else:...
     @logit(logger,logging.INFO)
     def selectCard(self):
-        color,sealed,hougu,np,resist,critical,group=Detect().getCardColor()+[i[5][1]for i in self.servant],Detect.cache.isCardSealed(),Detect.cache.isHouguReady(),[Detect.cache.getFieldServantNp(i)<100 for i in range(3)],[[1,1.7,.6][i]for i in Detect.cache.getCardResist()],[i/10 for i in Detect.cache.getCardCriticalRate()],[next(j for j,k in enumerate(self.servant)if k[0]==i)for i in Detect.cache.getCardServant([i[0] for i in self.servant if i[0]])]+[0,1,2]
+        hint=[i[0]for i in self.servant if i[0]]
+        if not hint:
+            logger.error('No identified servant candidates for command-card matching')
+            raise RuntimeError('No identified servant candidates for command-card matching')
+        color,sealed,hougu,np,resist,critical,group=Detect().getCardColor()+[i[5][1]for i in self.servant],Detect.cache.isCardSealed(),Detect.cache.isHouguReady(),[Detect.cache.getFieldServantNp(i)<100 for i in range(3)],[[1,1.7,.6][i]for i in Detect.cache.getCardResist()],[i/10 for i in Detect.cache.getCardCriticalRate()],[next(j for j,k in enumerate(self.servant)if k[0]==i)for i in Detect.cache.getCardServant(hint)]+[0,1,2]
         if self.normalAttackOnly:hougu=[False,False,False]
         houguTargeted,houguArea,houguSupport=[[j for j in range(3)if hougu[j]and self.servant[j][0]and self.servant[j][5][0]==i]for i in range(3)]
         houguArea=houguArea if self.stage==self.stageTotal or sum(i>0 for i in self.enemy)>1 and sum(self.enemy)>12000 else[]
