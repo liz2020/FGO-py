@@ -69,6 +69,7 @@ def inject_fixture(d, name, rect=(620, 95, 1230, 590)):
     ("interlude-stage-rows", ["百感交集如楔子", "大江山，金时除鬼"], [False, True]),
     ("interlude-stage-map", ["大江山，金时除鬼"], [False]),
     ("interlude-locked", [], []),
+    ("interlude-happy-pancake-story-stage", ["幸福的烤薄饼"], [False]),
 ])
 def test_real_rows_exclude_locked_free_and_partial_entries(detector, fixture, names, stages):
     entries = inject_fixture(detector, fixture).getInterludeEntries()
@@ -163,7 +164,7 @@ def screen(**overrides):
 @pytest.fixture
 def navigation():
     ticks = count(step=.1)
-    return load_definitions("fgoKernel.py", {"findNextInterlude"}, {
+    return load_definitions("fgoKernel.py", {"findNextInterlude", "_matchInterludeEntry"}, {
         "time": SimpleNamespace(monotonic=lambda: next(ticks)),
         "XDetect": SimpleNamespace(region="CN"),
         "schedule": MagicMock(), "fgoDevice": MagicMock(), "Detect": MagicMock(),
@@ -190,6 +191,113 @@ def test_story_stage_opens_matching_interlude_and_waits_for_transitions(navigati
     assert navigation["fgoDevice"].device.touch.call_args_list == [
         call((950, 170), 1200), call((950, 170), 1200),
     ]
+
+
+def test_story_stage_rereads_missing_title_before_clicking_matching_entry(navigation):
+    selection_retry_clock(navigation)
+    chosen = {**entry(stage=True), "name": "幸福的烤薄饼"}
+    matched = {**chosen, "stage": False, "target": (950, 171)}
+    misread = {**matched, "name": "幸福的烤薄", "target": (950, 350)}
+    listing = screen(isInterludeList=True, isQuestListBegin=True, getInterludeEntries=[chosen])
+    first = screen(locateInterludeReturn=(96, 134), getInterludeEntries=[misread])
+    loading = screen(locateInterludeReturn=(96, 134))
+    stage = screen(locateInterludeReturn=(96, 134), getInterludeEntries=[misread, matched])
+    feed_navigation(navigation, [listing, first, loading, stage, screen(isChooseFriend=True)])
+    assert navigation["findNextInterlude"]() == {"ready": True, "entry": matched}
+    assert navigation["fgoDevice"].device.touch.call_args_list == [
+        call(chosen["target"], 1200), call(matched["target"], 1200),
+    ]
+    first.getInterludeEntries.assert_called_once()
+    stage.getInterludeEntries.assert_called_once()
+    navigation["logger"].warning.assert_called_once()
+
+
+@pytest.mark.parametrize("chosen_name,read_name", [
+    ("幸福的烤薄饼", "幸福的烤薄饼．"),
+    ("幸福的烤薄饼", "幸福的烤薄饼."),
+    ("幸福的烤薄饼．", "幸福的烤薄饼"),
+])
+def test_story_stage_ignores_single_ocr_dot_and_preserves_selected_identity(
+        navigation, chosen_name, read_name):
+    chosen = {**entry(stage=True), "name": chosen_name}
+    read = {**entry(), "name": read_name, "target": (950, 350), "progress": "2"}
+    listing = screen(isInterludeList=True, isQuestListBegin=True, getInterludeEntries=[chosen])
+    stage = screen(locateInterludeReturn=(96, 134), getInterludeEntries=[read])
+    feed_navigation(navigation, [listing, stage, screen(isChooseFriend=True)])
+    assert navigation["findNextInterlude"]() == {
+        "ready": True, "entry": {**read, "name": chosen_name},
+    }
+    assert navigation["fgoDevice"].device.touch.call_args_list == [
+        call(chosen["target"], 1200), call(read["target"], 1200),
+    ]
+    navigation["logger"].warning.assert_called_once()
+
+
+def test_interlude_title_exact_match_takes_precedence_over_dot_normalization(navigation):
+    exact = {**entry(), "name": "幸福的烤薄饼．"}
+    other = {**exact, "name": "幸福的烤薄饼"}
+    assert navigation["_matchInterludeEntry"]([other, exact], exact["name"]) == exact
+    navigation["logger"].warning.assert_not_called()
+
+
+@pytest.mark.parametrize("name", [
+    "幸福的烤簿饼", "幸福的烤薄", "幸福的烤薄饼...", "幸福的烤薄饼…",
+    "幸福的烤薄饼。", "幸福的烤.薄饼",
+])
+def test_interlude_dot_tolerance_does_not_match_different_words_or_punctuation(navigation, name):
+    assert navigation["_matchInterludeEntry"](
+        [{**entry(), "name": name}], "幸福的烤薄饼",
+    ) is None
+
+
+def test_ambiguous_dot_variants_stop_without_tapping_another_quest(navigation):
+    chosen = {**entry(stage=True), "name": "幸福的烤薄饼"}
+    variants = [{**entry(), "name": chosen["name"] + dot} for dot in (".", "．")]
+    listing = screen(isInterludeList=True, isQuestListBegin=True, getInterludeEntries=[chosen])
+    stage = screen(locateInterludeReturn=(96, 134), getInterludeEntries=variants)
+    feed_navigation(navigation, [listing, stage])
+    with pytest.raises(RuntimeError, match="Ambiguous interlude title"):
+        navigation["findNextInterlude"]()
+    navigation["fgoDevice"].device.touch.assert_called_once_with(chosen["target"], 1200)
+
+
+def test_story_stage_missing_title_stops_after_three_reads_without_wrong_taps(navigation):
+    selection_retry_clock(navigation)
+    chosen = entry(stage=True)
+    other = {**entry(), "name": "another interlude"}
+    listing = screen(isInterludeList=True, isQuestListBegin=True, getInterludeEntries=[chosen])
+    stage = screen(locateInterludeReturn=(100, 130), getInterludeEntries=[other])
+    feed_navigation(navigation, [listing, stage])
+    with pytest.raises(RuntimeError, match="story stage after 3 reads"):
+        navigation["findNextInterlude"]()
+    assert stage.getInterludeEntries.call_count == 3
+    navigation["fgoDevice"].device.touch.assert_called_once_with(chosen["target"], 1200)
+
+
+def test_story_stage_missing_title_does_not_extend_navigation_deadline(navigation):
+    chosen = entry(stage=True)
+    listing = screen(isInterludeList=True, isQuestListBegin=True, getInterludeEntries=[chosen])
+    stage = screen(locateInterludeReturn=(100, 130), getInterludeEntries=[{**entry(), "name": "other"}])
+    feed_navigation(navigation, [listing, stage])
+    with pytest.raises(TimeoutError, match="known endpoint"):
+        navigation["findNextInterlude"](timeout_s=1)
+    assert stage.getInterludeEntries.call_count == 1
+    navigation["fgoDevice"].device.touch.assert_called_once()
+
+
+def test_story_stage_retry_honors_cancellation(navigation):
+    class Cancelled(Exception):
+        pass
+
+    chosen = entry(stage=True)
+    listing = screen(isInterludeList=True, isQuestListBegin=True, getInterludeEntries=[chosen])
+    stage = screen(locateInterludeReturn=(100, 130), getInterludeEntries=[{**entry(), "name": "other"}])
+    feed_navigation(navigation, [listing, stage])
+    navigation["schedule"].checkStop.side_effect = [None, None, Cancelled("cancelled")]
+    with pytest.raises(Cancelled, match="cancelled"):
+        navigation["findNextInterlude"]()
+    stage.getInterludeEntries.assert_called_once()
+    navigation["fgoDevice"].device.touch.assert_called_once()
 
 
 def test_story_only_confirmation_continues_to_existing_auto_battle_entry(navigation):
@@ -261,6 +369,21 @@ def test_ignored_list_click_retries_the_same_entry_with_fresh_coordinates(naviga
     assert navigation["findNextInterlude"]() == {"ready": True, "entry": moved}
     assert navigation["fgoDevice"].device.touch.call_args_list == [
         call(chosen["target"], 1200), call(moved["target"], 1200),
+    ]
+
+
+def test_list_selection_retry_uses_the_same_ocr_dot_tolerance(navigation):
+    selection_retry_clock(navigation)
+    chosen = {**entry(), "name": "幸福的烤薄饼"}
+    refreshed = {**chosen, "name": chosen["name"] + "．", "target": (950, 350)}
+    listing = screen(isInterludeList=True, isMainInterface=True, isQuestListBegin=True, getInterludeEntries=[chosen])
+    retry = screen(isInterludeList=True, isMainInterface=True, getInterludeEntries=[refreshed])
+    feed_navigation(navigation, [listing, retry, screen(isChooseFriend=True)])
+    assert navigation["findNextInterlude"]() == {
+        "ready": True, "entry": {**refreshed, "name": chosen["name"]},
+    }
+    assert navigation["fgoDevice"].device.touch.call_args_list == [
+        call(chosen["target"], 1200), call(refreshed["target"], 1200),
     ]
 
 
