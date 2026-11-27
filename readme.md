@@ -70,12 +70,33 @@ Servant metadata and recognition images are synchronized with
 [hgjazhgj/FGO-py at `7b0cb32ff8ee`](https://github.com/hgjazhgj/FGO-py/commit/7b0cb32ff8ee8207715f4ea1084c1a86b5412d1f):
 465 servant entries through ID 477, including updates to existing servants.
 Grand Class recognition includes Saber, Berserker, Lancer, Alter Ego, Pretender,
-and Beast. These are recognition templates, not automation of Grand-specific
+and Beast from that upstream snapshot, plus Archer, Rider, Caster, Assassin,
+Ruler, Avenger, Moon Cancer and Foreigner from the TYPE-MOON Wiki icons below.
+These are recognition templates, not automation of Grand-specific
 quests or mechanics; recognition on a particular regional client still depends
 on its artwork and UI matching the templates.
 
-The original asset sources and license exclusions stated above still apply;
-this synchronization does not relicense those assets under AGPL.
+The additional icons are resized from 94x94 to 81x81, cropped to rows 1-55 to
+exclude the Roman numeral, and use binary alpha masks eroded by two pixels
+to keep transparent/antialiased edges out of matching. The detector's existing
+matching thresholds are unchanged. Grand Archer is verified against an actual
+CN turn-start HUD, including identifying Tiamat as servant 450; the other
+additional icons have template-based checks, not regional live-game validation.
+
+| Additional class | Icon source |
+| --- | --- |
+| Archer | [TYPE-MOON Wiki](https://static.wikia.nocookie.net/typemoon/images/1/18/FGO_Grand_Archer.png/revision/latest?cb=20260301045610) |
+| Rider | [TYPE-MOON Wiki](https://static.wikia.nocookie.net/typemoon/images/9/9c/FGO_Grand_Rider.png/revision/latest) |
+| Caster | [TYPE-MOON Wiki](https://static.wikia.nocookie.net/typemoon/images/8/8e/FGO_Grand_Caster.png/revision/latest?cb=20260301043146) |
+| Assassin | [TYPE-MOON Wiki](https://static.wikia.nocookie.net/typemoon/images/e/e2/FGO_Grand_Assassin.png/revision/latest) |
+| Ruler | [TYPE-MOON Wiki](https://static.wikia.nocookie.net/typemoon/images/0/0c/FGO_Grand_Ruler.png/revision/latest) |
+| Avenger | [TYPE-MOON Wiki](https://static.wikia.nocookie.net/typemoon/images/d/d3/FGO_Grand_Avenger.png/revision/latest) |
+| Moon Cancer | [TYPE-MOON Wiki](https://static.wikia.nocookie.net/typemoon/images/e/ed/FGO_Grand_MoonCancer.png/revision/latest) |
+| Foreigner | [TYPE-MOON Wiki](https://static.wikia.nocookie.net/typemoon/images/4/40/FGO_Grand_Foreigner.png/revision/latest) |
+
+The original asset sources and license exclusions stated above still apply.
+The additional Wiki icons are source artwork too; these changes do not relicense
+recognition assets under AGPL.
 
 ## Recovering a stuck FGO-py process
 
@@ -118,6 +139,13 @@ If selecting a list entry does not open it, navigation retries up to three
 total clicks, waiting for the interactive list and re-reading the same entry
 and its coordinates each time. Missing entries or changed quest types stop the task;
 unrecognized pages are not blindly tapped.
+Smart battle retries unidentified living servants with two fresh screenshots,
+waiting 0.5 seconds before each retry, and checks previously unknown slots again
+on later turns. Empty slots do not trigger retries while other servants are
+identified. If no servant is identified after three total attempts, it reports
+an explicit recognition error before tapping Attack instead of attempting
+command-card matching with an empty candidate list. Retries do not replace
+missing class/portrait templates and still allow pause/cancel.
 The task stops when no available interludes remain, or reports an error on
 navigation/cleanup timeout, defeat or stalled progress. It does not consume
 apples or quartz for AP recovery. Start on a navigation screen, not in a

@@ -82,7 +82,7 @@ def test_all_servant_images_have_complete_masked_tiles(metadata):
                 assert numpy.any(mask), (servant_id, name)
 
 
-@pytest.mark.parametrize("class_id", [1, 3, 7, 10, 13, 14])
+@pytest.mark.parametrize("class_id", range(1, 15))
 def test_grand_class_recognition_in_battle_and_team(metadata, detector_type, class_id):
     detector, templates = detector_type
     index = metadata["classImg"][0].index([class_id, 3])
@@ -99,6 +99,29 @@ def test_grand_class_recognition_in_battle_and_team(metadata, detector_type, cla
         left = 30 + 200 * pos + 15 * (pos > 2)
         d.im[133:133 + height, left:left + width] = image
     assert d.getTeamServantClassRank() == [[class_id, 3]] * 6
+
+
+def test_grand_archer_is_recognized_on_real_cn_battle_hud(detector_type):
+    detector, _ = detector_type
+    image = cv2.imread(str(ROOT.parent / "tests" / "fixtures" / "grand-archer-class-cn.png"))
+    assert image is not None
+    d = detector()
+    for pos in range(3):
+        d.im = numpy.zeros((720, 1280, 3), dtype=numpy.uint8)
+        left = 13 + 318 * pos
+        d.im[618:702, left:left + 104] = image
+        assert d.getFieldServantClassRank(pos) == [2, 3]
+
+
+def test_grand_archer_tiamat_is_identified_on_real_turn_start(detector_type):
+    detector, _ = detector_type
+    image = cv2.imread(str(ROOT.parent / "tests" / "fixtures" / "grand-archer-field-cn.png"))
+    assert image is not None
+    d = detector()
+    d.im = numpy.zeros((720, 1280, 3), dtype=numpy.uint8)
+    d.im[421:702, 649:843] = image
+    assert d.getFieldServantClassRank(2) == [2, 3]
+    assert d.getFieldServant(2) == 450
 
 
 @pytest.mark.parametrize("servant_id", sorted(NEW_SERVANTS))
