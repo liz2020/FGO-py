@@ -134,6 +134,9 @@ pre-/post-battle endpoint, so cleanup does not keep tapping the top bar or
 advancing story on the list before interlude navigation resumes.
 Consecutive **从者资料更新** notifications are closed without opening servant
 profiles, including after story-only segments and when story skipping is disabled.
+New **幕间物语 / 已开放** notifications also select the left **关闭** button,
+not **前往幕间物语**, before resuming normal navigation. Both the notification
+message and close label must match; repeated notices use the existing flow deadline.
 Mandatory single-NPC support takes precedence over the configured support name.
 If selecting a list entry does not open it, navigation retries up to three
 total clicks, waiting for the interactive list and re-reading the same entry
