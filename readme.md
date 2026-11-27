@@ -139,6 +139,16 @@ If selecting a list entry does not open it, navigation retries up to three
 total clicks, waiting for the interactive list and re-reading the same entry
 and its coordinates each time. Missing entries or changed quest types stop the task;
 unrecognized pages are not blindly tapped.
+On redirected story stages, a nonempty row scan missing the selected title is
+re-read up to three times, at least one second apart, without clicking another
+quest or extending the navigation deadline. Empty/loading scans wait within
+the same deadline; persistent mismatches report both the expected title and
+the recognized rows.
+Title lookup prefers an exact OCR match. If none exists, it tolerates one
+trailing ASCII/full-width dot only when the resulting title identifies a
+unique row, for both story-stage lookup and list-selection retries. It preserves
+the selected title for progress tracking, logs the tolerated OCR variation,
+and does not ignore other characters, internal punctuation or ellipses.
 Smart battle retries unidentified living servants with two fresh screenshots,
 waiting 0.5 seconds before each retry, and checks previously unknown slots again
 on later turns. Empty slots do not trigger retries while other servants are

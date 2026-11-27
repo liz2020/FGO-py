@@ -853,6 +853,19 @@ def findNextChapter(timeout_s=30,steps=2,target_offset_y=130,settle_ms=1200,on_p
         return {'clicks':clicked,'reached_pre_battle':False,'reached_battle':False}
     raise TimeoutError(f'Next marker not found within {timeout_s}s')
 
+def _matchInterludeEntry(entries,name):
+    exact=next((item for item in entries if item['name']==name),None)
+    if exact is not None:return exact
+    def titleKey(title):
+        return title[:-1]if title.endswith(('.', '．'))and not title[:-1].endswith(('.', '．'))else title
+    key=titleKey(name)
+    matches=[item for item in entries if titleKey(item['name'])==key]
+    if len(matches)>1:
+        raise RuntimeError(f"Ambiguous interlude title after ignoring a trailing dot: {name}; recognized rows: {[item['name']for item in matches]}")
+    if not matches:return None
+    logger.warning('Matching interlude title with a single trailing OCR dot ignored: %r -> %r',matches[0]['name'],name)
+    return {**matches[0],'name':name}
+
 def findNextInterlude(timeout_s=60,on_progress=None):
     """Navigate CN interludes to the existing auto-battle entry point."""
     if XDetect.region!='CN':
@@ -864,6 +877,8 @@ def findNextInterlude(timeout_s=60,on_progress=None):
     selected=None
     selection_attempts=0
     retry_at=0
+    stage_read_attempts=0
+    stage_retry_at=0
     rewind=True
     terminal=False
     scrolls=0
@@ -888,13 +903,22 @@ def findNextInterlude(timeout_s=60,on_progress=None):
         if returning:
             if waiting_return or(selected and not selected['stage']):
                 continue
-            entries=d.getInterludeEntries()if selected else[]
             if selected:
+                if time.monotonic()<stage_retry_at:
+                    continue
+                entries=d.getInterludeEntries()
                 if not entries:
                     continue
-                entry=next((item for item in entries if item['name']==selected['name']),None)
+                entry=_matchInterludeEntry(entries,selected['name'])
                 if entry is None:
-                    raise RuntimeError(f"Interlude not found on its story stage: {selected['name']}")
+                    stage_read_attempts+=1
+                    names=[item['name']for item in entries]
+                    logger.warning('Interlude %s not yet found on its story stage (%d/3); recognized rows: %s',selected['name'],stage_read_attempts,names)
+                    if stage_read_attempts>=3:
+                        raise RuntimeError(f"Interlude not found on its story stage after 3 reads: {selected['name']}; recognized rows: {names}")
+                    notify(f"Waiting for story-stage interlude {stage_read_attempts}/3: {selected['name']}")
+                    stage_retry_at=time.monotonic()+1
+                    continue
                 selected=entry
                 notify(f"Opening interlude: {entry['name']}")
                 fgoDevice.device.touch(entry['target'],1200)
@@ -910,7 +934,7 @@ def findNextInterlude(timeout_s=60,on_progress=None):
             if selected:
                 if time.monotonic()<retry_at or not d.isMainInterface():
                     continue
-                current=next((item for item in d.getInterludeEntries()if item['name']==selected['name']),None)
+                current=_matchInterludeEntry(d.getInterludeEntries(),selected['name'])
                 if current is None:
                     raise RuntimeError(f"Selected interlude is no longer visible: {selected['name']}")
                 if current['stage']!=selected['stage']:
